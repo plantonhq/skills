@@ -1,0 +1,34 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "planton",
+  "description": "Planton's agent skills and platform tools for coding agents: compose, validate, and deploy cloud infrastructure and services from Cursor, Claude Code, and any Agent Skills host.",
+  "owner": {
+    "name": "Planton",
+    "url": "https://github.com/plantonhq"
+  },
+  "plugins": [
+    {
+      "name": "planton",
+      "displayName": "Planton",
+      "description": "The Planton skill (cloud infrastructure and service delivery craft) and the Multi-Cloud Catalog skill (the component reference pack: schemas, wiring, cost, security posture, permissions). No credentials required; pairs with the planton CLI.",
+      "version": "v0.5.41",
+      "source": "./",
+      "license": "Apache-2.0",
+      "homepage": "https://planton.ai/docs/coding-agents",
+      "repository": "https://github.com/plantonhq/planton",
+      "keywords": ["planton", "infrastructure", "cloud", "kubernetes", "aws", "gcp", "azure", "deploy", "iac", "devops"],
+      "category": "infrastructure"
+    },
+    {
+      "name": "planton-platform-tools",
+      "displayName": "Planton Platform Tools",
+      "description": "The hosted Planton MCP server: build, apply, deploy, and read your organization's infrastructure and services as the signed-in user. Requires a Planton API key in PLANTON_API_KEY.",
+      "version": "1",
+      "source": "./plugins/platform-tools",
+      "license": "Apache-2.0",
+      "homepage": "https://planton.ai/docs/coding-agents",
+      "keywords": ["planton", "mcp", "infrastructure", "deploy"],
+      "category": "infrastructure"
+    }
+  ]
+}

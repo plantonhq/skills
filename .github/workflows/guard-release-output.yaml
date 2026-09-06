@@ -1,0 +1,38 @@
+# Guard: the skills/ tree in this repository is RELEASE OUTPUT, never authored.
+#
+# Every file under skills/ is written by the release lane of
+# github.com/plantonhq/planton (the workflow release.definitions.yaml), which
+# copies the checksum-verified exploded skill trees of a published release
+# into this repository and tags the commit with the release's tag. The one
+# source of truth for skill content is that repository's skills/ tree; a
+# change made here would be silently overwritten by the next release and,
+# until then, would fork the content coding agents install from the content
+# every other Planton surface runs.
+#
+# So a pull request that touches skills/ is refused with the path to the
+# real home. Authored files -- the README, the marketplace and plugin
+# manifests, the platform-tools plugin -- are edited here as usual.
+name: guard-release-output
+
+on:
+  pull_request:
+    paths:
+      - "skills/**"
+
+jobs:
+  refuse-skill-edits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Refuse edits under skills/
+        run: |
+          cat <<'EOF'
+          This pull request changes files under skills/, which are release
+          output written by the plantonhq/planton release lane. Edits here
+          are overwritten by the next release and fork the content coding
+          agents install from what every other Planton surface runs.
+
+          Make the change in github.com/plantonhq/planton under skills/
+          (the lint gate there enforces the Agent Skills specification);
+          the next release carries it here automatically.
+          EOF
+          exit 1

@@ -1,0 +1,13 @@
+{
+  "name": "planton-platform-tools",
+  "displayName": "Planton Platform Tools",
+  "description": "The hosted Planton MCP server: build, apply, deploy, and read your organization's infrastructure and services as the signed-in user. Requires a Planton API key in PLANTON_API_KEY.",
+  "version": "1",
+  "author": {
+    "name": "Planton",
+    "url": "https://github.com/plantonhq"
+  },
+  "homepage": "https://planton.ai/docs/coding-agents",
+  "license": "Apache-2.0",
+  "keywords": ["planton", "mcp", "infrastructure", "deploy"]
+}

@@ -1,0 +1,89 @@
+# GENERATED -- DO NOT EDIT. Regenerate with `make generate-cost-estimates`.
+# This file replays the component's presets through its cost derivation
+# (../derivations/, the machine-executable value-to-quantity rules) against
+# the provider's price book (../pricebook/, pinned unit prices with source
+# URL and retrieval date): every line cost and preset total is computed
+# exactly, lines are ordered largest cost first, and the catalog-data
+# conformance gate re-verifies all arithmetic. A preset the derivation
+# refuses to price (a rate delegated to a referenced resource) carries no
+# entry here -- absence is the honest state, never a guessed number.
+# Schema: finops/componentcostestimate/v1.
+apiVersion: finops.planton.dev/v1
+kind: ComponentCostEstimate
+metadata:
+  name: gcpcomputedisk
+spec:
+  presets:
+    - preset: 01-data-volume
+      region_assumption: us-central1
+      currency: USD
+      hours_per_month: 730
+      line_items:
+        - service_name: Compute Engine
+          sku_meter: provisioned disk capacity
+          pricing_unit: GiB-months
+          pricing_quantity: "100"
+          quantity_basis: every provisioned GiB (size_gb) bills monthly at the disk type's own capacity rate from creation -- full or empty, attached or not
+          list_unit_price: "0.1"
+          price_source: https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus
+          retrieved_on: "2026-08-14"
+          list_cost: "10.0000"
+      total_list_cost: "10.0000"
+      exclusions:
+        - snapshot storage follows whatever snapshots the owner takes -- none are configured here
+      notes: pd-balanced performance scales with size and carries no separate performance meter -- capacity is the whole bill. The disk keeps billing while its VM is stopped and after the VM is deleted; deleting the disk is the only off switch.
+    - preset: 02-encrypted-database-volume
+      region_assumption: us-central1
+      currency: USD
+      hours_per_month: 730
+      line_items:
+        - service_name: Compute Engine
+          sku_meter: provisioned disk capacity
+          pricing_unit: GiB-months
+          pricing_quantity: "500"
+          quantity_basis: every provisioned GiB (size_gb) bills monthly at the disk type's own capacity rate from creation -- full or empty, attached or not
+          list_unit_price: "0.17"
+          price_source: https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus
+          retrieved_on: "2026-08-16"
+          list_cost: "85.0000"
+      total_list_cost: "85.0000"
+      exclusions:
+        - the create_snapshot_before_destroy final snapshot bills snapshot storage per GiB actually stored, from destroy day until someone deletes it -- unknowable from the manifest
+        - CMEK adds no per-disk charge -- the Cloud KMS key bills its own key-version and operation charges on the GcpKmsKey component
+      notes: Encryption posture (CMEK vs Google-managed) does not change the disk's capacity rate -- the premium here is pd-ssd itself, chosen for database IOPS-per-GB.
+    - preset: 03-hyperdisk-high-iops
+      region_assumption: us-central1
+      currency: USD
+      hours_per_month: 730
+      line_items:
+        - service_name: Compute Engine
+          sku_meter: provisioned disk capacity
+          pricing_unit: GiB-months
+          pricing_quantity: "1000"
+          quantity_basis: every provisioned GiB (size_gb) bills monthly at the disk type's own capacity rate from creation -- full or empty, attached or not
+          list_unit_price: "0.08"
+          price_source: https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus
+          retrieved_on: "2026-08-16"
+          list_cost: "80.0000"
+        - service_name: Compute Engine
+          sku_meter: provisioned IOPS
+          pricing_unit: IOPS-months
+          pricing_quantity: "3000"
+          quantity_basis: hyperdisk-balanced includes a 3,000-IOPS baseline free -- only the excess over it (provisioned_iops minus 3,000) bills monthly
+          list_unit_price: "0.005"
+          price_source: https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus
+          retrieved_on: "2026-08-16"
+          list_cost: "15.0000"
+        - service_name: Compute Engine
+          sku_meter: provisioned throughput
+          pricing_unit: MBps-months
+          pricing_quantity: "150"
+          quantity_basis: hyperdisk-balanced includes a 140-MBps baseline free -- only the excess over it (provisioned_throughput minus 140) bills monthly
+          list_unit_price: "0.04"
+          price_source: https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus
+          retrieved_on: "2026-08-16"
+          list_cost: "6.0000"
+      total_list_cost: "101.0000"
+      exclusions:
+        - snapshot storage follows whatever snapshots the owner takes -- none are configured here
+      notes: Hyperdisk decouples performance from capacity -- IOPS and throughput retune in place (at most every 4 hours), so performance spend can ratchet up or down without touching the stored data. The included baselines are per-disk and fixed, not size-scaled.
