@@ -11,7 +11,7 @@
       "name": "planton",
       "displayName": "Planton",
       "description": "The Planton skill (cloud infrastructure and service delivery craft) and the Multi-Cloud Catalog skill (the component reference pack: schemas, wiring, cost, security posture, permissions). No credentials required; pairs with the planton CLI.",
-      "version": "v0.5.49",
+      "version": "v0.5.51",
       "source": "./",
       "license": "Apache-2.0",
       "homepage": "https://planton.ai/docs/coding-agents",
