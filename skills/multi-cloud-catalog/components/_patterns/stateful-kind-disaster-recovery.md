@@ -117,10 +117,10 @@ spec:
     value: openbao
   createNamespace: true
   server:
-    ha:
-      replicas: 3
-    dataStorage:
-      size: 10Gi
+    raft:
+      dataStorage:
+        size: 10Gi
+    replicas: 3
   backup:
     schedule: "0 * * * *"
     retentionDays: 14
@@ -259,6 +259,7 @@ same key on source and target) and the bad-day restore target.
 | **Cloudflare R2 by reference** | The store outside the cloud that runs the cluster; one token per bucket, least privilege; the store follows the bucket's jurisdiction | No keyless posture exists; emptying the bucket before teardown is yours | Bucket and token are two nodes; the instance draws edges to both |
 | **One path or prefix per live instance** | Retention and archiving stay correct | A restore target must declare the SOURCE's path to read it — the one deliberate sharing — and then (PostgreSQL) archive its own to a NEW path, or (OpenBao) suspend its schedule while the restore is declared | None; the path is a string, which is why the rule is taught here |
 | **The GCS bucket's two roles** | rclone, Barman, and the storage clients read the bucket's attributes before writing | `roles/storage.objectAdmin` alone fails with `storage.buckets.get`; add `roles/storage.legacyBucketReader` on the bucket's `iamMembers` | None |
+| **OpenBao's storage engine** (integrated Raft, or PostgreSQL by reference to a `KubernetesPostgres`) | Raft: the vault owns its recovery — this pattern's snapshot, store, and restore apply to it directly. PostgreSQL: ONE backup covers the database and the vault; the vault's bad day is the database's restore, and the kind refuses a `backup` block so two stories are never run by accident | Raft: a second store and a second rehearsal beside the database's. PostgreSQL: the database's outage is the vault's; the seal key is still required on restore (the barrier key wraps the data on either engine); the vault's connection pool counts against the database's headroom | Raft: the vault and its own volume, no edge. PostgreSQL: edges from the vault to the database node and to its credential Secret — the dependency is a visible node. The judgment of when to choose which is the [OpenBao guide's engine section](../kubernetes/kubernetesopenbao/GUIDE.md#storage-engine-raft-or-postgresql) |
 
 ## The restore is a declaration, and one step stays yours
 
@@ -303,8 +304,10 @@ second cluster.
   reached by its S3 endpoint) protects against pod loss, not cluster loss.
   It is the right lab shape and the wrong disaster-recovery shape; say so in
   the proposal.
-- Dev-mode or file-storage instances (OpenBao's `dev` and `standalone`
-  modes) have nothing to snapshot; the kinds refuse a backup block on them.
+- An OpenBao in `dev` has nothing to snapshot, and an OpenBao on
+  PostgreSQL storage is backed up by its database -- its disaster recovery
+  is the database's, and the kind refuses a backup block on both, with the
+  reason. Snapshots exist only for integrated Raft.
 - A restore is never an edit to a running instance: it is a new instance
   declared with the restore member set. Editing a live instance's restore
   block changes nothing on PostgreSQL and MongoDB, and on OpenBao it only
