@@ -366,10 +366,9 @@ reach a person"). Split the work by lifecycle, not by component:
   (`allowed_listeners`) and the hub attaches a `KubernetesListenerSet`
   with its own certificate, one per hostname, so a browser never reuses
   another hostname's connection and meets a 404. external-dns writes a
-  record for a route on a listener set only when its chart value
-  `enableGatewayListenerSets` is on (no typed field yet, so it rides
-  `helm_values`); without it the route reads Accepted and no record
-  appears.
+  record for a route on a listener set only with
+  `gateway_listener_sets: true` (beside a `gateway-*` source); without it
+  the route reads Accepted and no record appears.
 
 ```yaml
 apiVersion: kubernetes.planton.dev/v1alpha1
@@ -503,6 +502,15 @@ data, so a broken link never changes what alerts):
   `bearer_token_secret` and by the collector's `env_from_secrets` as an
   `Authorization: Bearer ${env:...}` header. Both name the Secret as a
   plain string, so each needs an explicit `depends_on`.
+- **The hub's Loki is sized for every cluster catching up at once,** not
+  for the steady rate: `limits.ingestion_rate_mb` above the summed
+  catch-up (12 serves a few clusters) and `ingestion_burst_size_mb` above
+  every collector's largest batch (24 against a 4 MiB `max_size`), because
+  Loki refuses a push larger than its burst every time. Each collector
+  batches only from its on-disk queue, capped in bytes, and blocks when
+  that queue is full (the `KubernetesOtelCollector` guide), and each has
+  `service_monitor_enabled`, so the hub sees a sender's queue fill before
+  any line is late.
 
 ```yaml
 apiVersion: kubernetes.planton.dev/v1alpha1
@@ -608,22 +616,37 @@ spec:
   reservations.
 - **Forecast only what has history.** A week's linear forecast from a
   node or build volume minutes old predicts hundreds of gigabytes below
-  zero; show fullness now for cattle, and trends over the dashboard's
-  range.
+  zero; show fullness now for cattle. A cluster's memory a week ahead
+  does answer "will it run out", once the range holds days of samples:
+  withhold it until then and say so in the cell (the `KubernetesGrafana`
+  guide has the query shape).
 - **Once several clusters write into one Prometheus, every join and
   grouping carries `cluster`.** Node addresses, namespaces and pod names
   repeat across clusters, so `on(instance)` or `on(namespace, pod)` alone
   matches two clusters' series and the query fails, and an "All" view
   sums clusters that should be compared. Lead with one row per cluster
-  (reserved, used, the busiest node's worst minute over the range) rather
-  than a blended number.
-- **Count sparse events with a rate over several of their periods.**
+  (reserved, used now, the busiest node's peak in the range, memory used
+  a week ahead) rather than a blended number.
+- **Count sparse events as totals, not per-interval charts.**
   `increase(x[$__interval])` over a window of one or two scrapes sees only
   increments between its own samples; a sender on a steady rhythm (an
   Alertmanager heartbeat every two minutes) lands every increment between
-  windows and reads zero all hour while Prometheus holds dozens. A rate
-  over ten minutes reads them; filter to the integrations in use so a
-  silent pager shows as zero, not as absent.
+  windows and reads zero all hour while Prometheus holds dozens. A table
+  of totals over `$__range` per channel, sent and failed, answers "did it
+  go out"; filter to the integrations in use so a silent pager shows as
+  zero, not as absent.
+- **Name a component by its container across metrics and logs.** The
+  container name (`postgres`, `openfga`, `temporal-history`) is the same
+  in kube-state-metrics, cAdvisor and Loki's `k8s_container_name`, so one
+  mapping joins a component's restarts, out-of-memory kills and error
+  lines in a row; its workloads come from the controllers that survive
+  scaling to zero.
+- **An exporter that labels what it probes keeps its labels.** An
+  outside watcher reports each probed environment in `environment`;
+  scraping it with a static `environment` of its own moves that to
+  `exported_environment`. `honor_labels: true` on that scrape job keeps
+  the probe's environment, and the static label still fills series that
+  carry none.
 - **Roll pods up to the workload that owns them** from
   `kube_pod_owner`: a ReplicaSet's name less its last segment is its
   Deployment, other owners are named as they are, and a pod owned by

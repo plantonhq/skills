@@ -123,9 +123,15 @@ Ask these before composing, in the person's words, not the chart's:
   keep dashboards in committed files.
 - **Put the log collector in each cluster's agent, the stores in the
   hub,** and give the hub its own listener set on the cluster's Gateway
-  (the pattern's "A hub beside a cluster's agent"). Copy the collector
-  preset whole: its `include_file_path`, `file_storage` and self-exclude
-  are each the difference between logs arriving and silence.
+  (the pattern's "A hub beside a cluster's agent"), with external-dns's
+  `gateway_listener_sets` on, or the hub's route is Accepted and its
+  hostname never resolves. Copy the collector preset whole: its
+  `include_file_path`, `file_storage` and self-exclude are each the
+  difference between logs arriving and silence, and its sending queue
+  (batching there and never in a `batch` processor, capped in bytes
+  below Loki's burst, blocking when full) is the difference between a
+  restart or a long Loki outage losing lines and losing none. Turn on
+  the collector's `service_monitor_enabled` so its queue is watched.
 - **A `$var/` reference works in a plain-string field** (a Grafana
   `client_id`, for one): it resolves at deploy like any other.
 - **Dashboards are files, not clicks.** Ship each as a
@@ -143,12 +149,31 @@ Ask these before composing, in the person's words, not the chart's:
   and group by `cluster` everywhere (node addresses and pod names repeat
   across clusters, and a join on them alone fails), name clusters by a
   short label, and lead a capacity screen with one row per cluster:
-  reserved, used and the busiest node's worst minute for memory and CPU,
-  the fullest disk, OOM kills.
-- **Count alert notifications with a rate over ten minutes,** never
-  `increase()` over the chart's interval: a heartbeat on a two-minute
-  rhythm reads zero all hour in one-minute windows. Show every channel
-  the estate uses, so a pager that sent nothing reads zero.
+  reserved, used now and the busiest node's peak in the range for
+  memory and CPU, memory used a week ahead at the range's trend, the
+  fullest disk, OOM kills. Name every column by its noun and window.
+  Withhold the forecast until the range holds three days of history,
+  and say so in the cell ("Needs 3 Days"): a line through a few hours
+  projected a week out is noise.
+- **Show alert notifications as a table per channel,** sent and failed
+  totals over the selected range, never a chart of per-interval counts:
+  a heartbeat on a two-minute rhythm aliases to zero or a saw-tooth in
+  short windows. List every channel the estate uses, so a pager that
+  sent nothing reads zero.
+- **Give the operator a first screen that belongs to no cluster:**
+  each environment's console and API as the outside watcher reaches
+  them, how long both were up, workloads with nothing ready, every
+  firing alert with its environment (a cluster-wide alert keeps its
+  cluster's own environment label), and each cluster's heartbeat age;
+  up and down over time as a state timeline. Scrape the watcher with
+  `honor_labels: true` so its probes keep the environment they probed.
+- **A data-tier screen is one row per component per environment:**
+  workloads down (nothing ready, so a component scaled to zero reads
+  red), restarts and out-of-memory kills in the range, fullest volume,
+  and error lines in the last hour from Loki joined into the same row.
+  Match each component's real log format for errors (a JSON level,
+  Postgres's `error_severity`, plain `panic:`), never the bare word
+  "error", which Postgres prints in every record.
 - **Read "how full is the node" from the node exporter,** not the
   containers' working set: the kubelet stops reporting container memory
   first when a node starves. Put it beside what pods reserve, because
@@ -186,6 +211,11 @@ to decide with the person, and what to watch for:
 - **Give the receiver an out-of-order window** about as long as a sender
   can resend (two hours), or an outage of the door longer than about an
   hour leaves a gap at the hub, while each cluster still keeps its own.
+- **Size the hub's Loki for every cluster catching up at once.** Raise
+  `limits.ingestion_rate_mb` (12 serves a few clusters) and keep
+  `ingestion_burst_size_mb` above the collectors' batch cap (24 against
+  4 MiB): Loki refuses a push larger than its burst every time, and a
+  collector retrying forever then stalls that node's logs for good.
 - **Expect real alerts in the first hour** of a cluster that never had
   in-cluster alerting. Read them with the person and list their causes;
   never silence one by hand.
@@ -250,6 +280,16 @@ Do these with the person, and report what arrived and when:
    Then confirm the sending cluster's series and log lines at the hub by
    their cluster label, and with the person's go stop the receiver for ten
    minutes and confirm no gap in the sender's series after it returns.
+9. For the log path, two drills. Load: post gzipped OTLP log batches
+   through the door at the summed catch-up rate for three minutes, retry
+   an unanswered batch once as a collector would, and confirm every batch
+   was accepted, `loki_discarded_samples_total` did not move, and the
+   platform's own front page is no slower. Durability, with the person's
+   go: a test pod writes numbered lines, the hub's Loki is scaled to zero
+   for ten minutes and the writer's node's collector is deleted halfway,
+   and after Loki returns every number must come back from Loki (a
+   duplicate is fine; the queue delivers at least once). Ask Loki for at
+   most 5,000 lines per query, its default per-query limit.
 
 A rotated alerting secret is picked up on the next notification without a
 restart, so rotation needs no drill of its own; the hub's secrets roll the
