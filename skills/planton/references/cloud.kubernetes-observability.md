@@ -116,6 +116,79 @@ Ask these before composing, in the person's words, not the chart's:
   secrets only at start; the pods carry a checksum of the secret, so the
   apply that writes a new value rolls them onto it. Rotate by updating the
   secret, then re-applying.
+- **Ask what teammates must do in Grafana.** In open-source Grafana only
+  Editors and Admins can open Explore, the one place to read logs and
+  traces before dashboards exist. People who investigate are Editors;
+  tell the person the cost (an Editor can save a hand-made dashboard) and
+  keep dashboards in committed files.
+- **Put the log collector in each cluster's agent, the stores in the
+  hub,** and give the hub its own listener set on the cluster's Gateway
+  (the pattern's "A hub beside a cluster's agent"). Copy the collector
+  preset whole: its `include_file_path`, `file_storage` and self-exclude
+  are each the difference between logs arriving and silence.
+- **A `$var/` reference works in a plain-string field** (a Grafana
+  `client_id`, for one): it resolves at deploy like any other.
+- **Dashboards are files, not clicks.** Ship each as a
+  `KubernetesConfigMap` labeled `grafana_dashboard` (the kind's preset
+  `04-grafana-dashboard`), in its own composition beside the hub so a
+  panel change never re-plans Grafana. Ask the person which questions
+  they ask mid-incident and give each its own dashboard, titled by the
+  question, with each panel's description the question it answers;
+  offer that before any generic community dashboard. Grafana refuses to
+  save over a provisioned dashboard, so tell the person screens change
+  only through the files. In an infra chart, keep double braces out of
+  the dashboard JSON (the chart engine renders it): pretty-print it and
+  name series with `${__field.labels.<label>}` display names.
+- **When several clusters report to one hub, answer per cluster.** Join
+  and group by `cluster` everywhere (node addresses and pod names repeat
+  across clusters, and a join on them alone fails), name clusters by a
+  short label, and lead a capacity screen with one row per cluster:
+  reserved, used and the busiest node's worst minute for memory and CPU,
+  the fullest disk, OOM kills.
+- **Count alert notifications with a rate over ten minutes,** never
+  `increase()` over the chart's interval: a heartbeat on a two-minute
+  rhythm reads zero all hour in one-minute windows. Show every channel
+  the estate uses, so a pager that sent nothing reads zero.
+- **Read "how full is the node" from the node exporter,** not the
+  containers' working set: the kubelet stops reporting container memory
+  first when a node starves. Put it beside what pods reserve, because
+  the autoscaler sees only reservations: a node at 99% with 45%
+  reserved is a build or a workload with no honest memory request.
+
+## When a second cluster reports to the hub
+
+Each cluster keeps its own agent and Alertmanager; only copies travel.
+The pattern's "Several clusters, one hub" has the exact switches. What
+to decide with the person, and what to watch for:
+
+- **The hub gets its own receiving Prometheus,** a second stack with
+  everything the agent already runs turned off. Never make the hub
+  cluster's agent the receiver: its rules would run over the other
+  clusters' samples and every one of their alerts would post twice.
+- **The other clusters write through a door of their own: a dedicated
+  Gateway, so a second load balancer.** Tell the person it costs about
+  one forwarding rule a month, and why it can't share the platform's
+  front door: a JWT check there would refuse every other bearer token
+  that Gateway serves. Put the door's pods at the monitoring priority
+  through the Gateway's `parameters_ref` ConfigMap.
+- **Mint one token per cluster yourself,** RS256 with a fresh key: the
+  token into the person's vault, never onto a screen, and only the public
+  key into the door's inline key set, with the cluster's name as key id
+  and subject. Destroy the signing key; revocation is deleting the key
+  from the door. Ask the person to name the issuer (the door's hostname
+  reads best) before the first token, because every token carries it.
+- **Label every signal with where it came from.** Metrics already carry
+  each agent's `external_labels` (`cluster`, `environment`) on the
+  remote write. Logs need the collector to insert `k8s.cluster.name` and
+  `deployment.environment.name`, which Loki indexes by default. Where
+  several environments share one cluster, the namespace tells them apart
+  until each pod states its own environment; say so.
+- **Give the receiver an out-of-order window** about as long as a sender
+  can resend (two hours), or an outage of the door longer than about an
+  hour leaves a gap at the hub, while each cluster still keeps its own.
+- **Expect real alerts in the first hour** of a cluster that never had
+  in-cluster alerting. Read them with the person and list their causes;
+  never silence one by hand.
 
 ## Proving it
 
@@ -150,8 +223,33 @@ Do these with the person, and report what arrived and when:
 
 5. For the hub, sign in with an account the person expects to get in and
    one that must not (another domain); the first lands with the role the
-   manifest names, the second is refused. Then read a log line and a trace
-   from Grafana and confirm objects are arriving in the bucket.
+   manifest names, the second is refused. With `hosted_domain` set, Google's
+   own screen fixes the domain, so the outside account stops there; say so
+   rather than claiming Grafana refused it. Unauthenticated, `/` must
+   redirect to sign-in and `/api/datasources` answer 401.
+6. Prove every datasource from the server: each one's
+   `/api/datasources/uid/<uid>/health` reads OK, a query returns data (a
+   log line from a known namespace, `up` from Prometheus), and one
+   synthetic span plus one log record with the same `traceId` come back
+   from Tempo by id and from Loki by the trace-to-logs query. Objects
+   appear in the buckets once Loki and Tempo flush (minutes for Tempo,
+   longer for Loki's chunks); an index file in the logs bucket proves the
+   key writes.
+7. Prove every dashboard from the server: `/api/dashboards/uid/<uid>`
+   reads `meta.provisioned: true` and matches the committed JSON except
+   `id` and `version`; every panel query returns at least one frame over
+   the dashboard's default range through `/api/ds/query` (a 200 with an
+   empty frame is no data; fill `$cluster`-style variables yourself, the
+   API fills only `$__range` and `$__rate_interval`); and
+   `/api/search?type=dash-db` lists nothing the files do not declare.
+8. For a telemetry door, four requests: no token is refused (403), a
+   token with the right claims signed by a key the door never saw is
+   refused (401), the real token with an empty body gets the store's own
+   error (Prometheus's 400, Loki's 422), which proves the door let it
+   pass, and the real token on any other path or method is refused (403).
+   Then confirm the sending cluster's series and log lines at the hub by
+   their cluster label, and with the person's go stop the receiver for ten
+   minutes and confirm no gap in the sender's series after it returns.
 
 A rotated alerting secret is picked up on the next notification without a
 restart, so rotation needs no drill of its own; the hub's secrets roll the
