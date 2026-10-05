@@ -1,0 +1,86 @@
+# Least-privilege permissions the IaC runner's Kubernetes principal needs to
+# provision, update, and destroy this component with the official modules.
+# Every entry is `derived` (static analysis of the module sources, cited in
+# notes) until the live capture lane upgrades it to `proven`. Schema:
+# iac/catalogkindpermissions/v1.
+#
+# The module itself touches almost nothing: it declares ONE custom resource
+# and (optionally) a namespace. The OPERATOR — running under its own
+# ServiceAccount installed by KubernetesPlantonOperator — is what creates
+# the platform's dozens of workloads; none of that rides this principal.
+apiVersion: iac.planton.dev/v1
+kind: CatalogKindPermissions
+metadata:
+  name: kubernetesplantonplatform
+spec:
+  kubernetes:
+    rules:
+      - api_groups:
+          - ""
+        resources:
+          - namespaces
+        verbs:
+          - get
+          - create
+          - update
+          - patch
+          - delete
+        cluster_scoped: true
+        provenance: derived
+        notes: Covers kubernetes_namespace_v1 — the optional owning namespace (create_namespace), created before the CR and deleted with the resource (the delete blocks until the namespace is fully gone).
+      - api_groups:
+          - ""
+        resources:
+          - secrets
+        verbs:
+          - get
+          - create
+          - update
+          - patch
+          - delete
+        cluster_scoped: false
+        provenance: derived
+        notes: Covers every Secret the module materializes in the platform's namespace before the CR, so the operator finds each credential already there — kubernetes_secret_v1.backup_credentials and recovery_credentials (the database's object-store credential per backend), backup_endpoint_ca and recovery_endpoint_ca (a private S3 endpoint's CA bundle), and vault_seal_credentials (a declared seal arm's credential, keyed by the environment variable the seal wrapper reads). A keyless posture creates none. All deleted with the resource.
+      - api_groups:
+          - planton.ai
+        resources:
+          - plantonplatforms
+        verbs:
+          - get
+          - list
+          - create
+          - update
+          - patch
+          - delete
+        cluster_scoped: false
+        provenance: derived
+        notes: Covers kubectl_manifest.planton_platform — the one PlantonPlatform declaration, applied server-side and deleted with the resource (platform teardown is Kubernetes garbage collection of the CR's owner-referenced children; the module's 15-minute delete budget is headroom, not an expected wait).
+      - api_groups:
+          - planton.ai
+        resources:
+          - plantonplatforms
+        verbs:
+          - watch
+        cluster_scoped: false
+        provenance: derived
+        notes: Pulumi only -- watch, which pulumi-kubernetes v4.33.0 reads while it waits and OpenTofu, polling the one object with get, never needs. Destroying the PlantonPlatform in main.go waits on an informer of the deleted object's kind until it is gone, at provider/pkg/await/await.go:984-1006 and condition/deleted.go:69-96. An informer whose list is forbidden never syncs, so the deploy or destroy hangs with no error instead of failing.
+      - api_groups:
+          - ""
+        resources:
+          - secrets
+        verbs:
+          - list
+          - watch
+        cluster_scoped: false
+        provenance: derived
+        notes: Pulumi only -- list and watch, which pulumi-kubernetes v4.33.0 reads while it waits and OpenTofu, polling the one object with get, never needs. Destroying the Secret in object_store_secrets.go waits on an informer of the deleted object's kind until it is gone, at provider/pkg/await/await.go:984-1006 and condition/deleted.go:69-96. An informer whose list is forbidden never syncs, so the deploy or destroy hangs with no error instead of failing. Listing or watching Secrets returns their data, not only their names, so this grants read of every Secret in the namespace. Pulumi's delete wait cannot watch a deleted Secret without it.
+      - api_groups:
+          - ""
+        resources:
+          - namespaces
+        verbs:
+          - list
+          - watch
+        cluster_scoped: true
+        provenance: derived
+        notes: Pulumi only -- list and watch, which pulumi-kubernetes v4.33.0 reads while it waits and OpenTofu, polling the one object with get, never needs. Destroying the Namespace in namespace.go waits on an informer of the deleted object's kind until it is gone, at provider/pkg/await/await.go:984-1006 and condition/deleted.go:69-96. An informer whose list is forbidden never syncs, so the deploy or destroy hangs with no error instead of failing.

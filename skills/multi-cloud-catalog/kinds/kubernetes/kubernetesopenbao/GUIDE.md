@@ -1,0 +1,624 @@
+# KubernetesOpenBao Guide
+
+The judgment this guide carries: when a user asks for Vault, this is the
+catalog's answer — and unlike most components, deploying it is not the
+end of the story: a fresh server sits NotReady BY DESIGN until a human
+(or runbook) initializes it, and a proposal that does not say so hands
+the user what looks like a failed deploy.
+
+Substitutes for: Vault (Linux Foundation-governed secrets manager,
+MPL-2.0 fork; speaks the Vault API — clients and integrations connect
+unchanged, and the External Secrets store's Vault arm points at it
+directly).
+
+## Answering "give me Vault"
+
+Propose this kind and say what you did: OpenBao is the catalog's
+Vault-compatible secrets manager. Never fall back to a Helm-release
+Vault chart — the substitution workflow is the
+[catalog guide](../../_docs/GUIDE.md)'s first law.
+
+## Say the init step out loud
+
+Initialization and unsealing are runtime API operations no deployment
+tool can perform declaratively — until they happen, pods report NotReady
+on purpose (the full lifecycle, including why the Services stay
+addressable for the init calls, is on [reference.md](v1alpha1/reference.md)). Two
+composition consequences:
+
+- The proposal must include the one-time `bao operator init` handoff —
+  otherwise the user reads the NotReady pods as a broken deploy.
+- Choose auto-unseal (cloud KMS arms, or the transit engine of another
+  OpenBao/Vault) in the manifest so RESTARTS need no human; only the
+  one-time initialization remains manual. Dev mode skips the ceremony
+  entirely but is never for real secrets — the reference page is blunt
+  about why.
+
+## Storage engine: Raft or PostgreSQL
+
+The second decision to make before the first deploy, and the one that
+decides whose disaster-recovery story the vault has. The reference page
+carries what each engine IS; this is when to choose which, and what the
+wrong choice costs.
+
+- **Choose integrated Raft (the default) when the vault should own its own
+  recovery.** The vault's data lives on its own volumes, its backup is the
+  kind's `backup` block (Raft snapshots to a store you name), and the bad
+  day is the [restore runbook](#restore-on-the-bad-day) below: a fresh vault
+  on the same seal key reads the snapshot and comes back. Availability is
+  quorum arithmetic — one server is a legal cluster, three survive one
+  loss, five survive two, and the count needs as many nodes. This is the
+  right engine when the vault is the team's most durable thing, when no
+  database the team already protects sits beside it, or when secrets must
+  outlive everything else in the cluster.
+- **Choose PostgreSQL storage when the team already runs and backs up a
+  `KubernetesPostgres` and wants ONE backup to cover the vault.** The vault
+  keeps its data in that database by reference, claims no volume, and its
+  disaster recovery becomes the database's: the database's backup carries
+  the vault's data, and the database's restore brings the vault back. What
+  does NOT change is the seal — the data in the database is encrypted by
+  the barrier key the seal wraps, so a restored database and a different
+  seal key is an unreadable vault, exactly as on Raft. Availability has no
+  quorum: the server holding the HA lock serves, and any live standby takes
+  the lock when it dies, so `replicas: 2` is a warm standby, not a
+  majority. Two costs to say out loud: a database
+  outage is a vault outage (the identity stack, the authorization engine,
+  and the secrets manager now share one blast radius when they share one
+  database — a deliberate trade, not an accident), and every server opens
+  its own pool, so `maxParallel` is set against the database's headroom
+  before the replica count multiplies it. This is the engine the
+  `06-production-postgresql-storage` preset shows (named by slug — presets
+  ship in the release's `presets.zip` and in the catalog repository, not in
+  the skill's pack), and the engine a platform's own bundled vault stores
+  on when the platform's database is already the thing being backed up.
+- **Never choose dev for real secrets.** It is the lab posture: in-memory,
+  auto-unsealed, the root token in plain text, nothing to back up.
+
+The database side of the PostgreSQL choice, so the proposal says it whole:
+
+- **The vault gets its own database, never a share of another consumer's.**
+  Its two tables land beside nobody else's schema. On a
+  [KubernetesPostgres](../kubernetespostgres/GUIDE.md) that is still to be
+  created, declare it at bootstrap — `bootstrap.initdb.postInitSql` with one
+  `CREATE DATABASE <name> OWNER <owner>;` line per extra database, the owner
+  being the role whose credential Secret the vault references (the
+  bootstrap owner's `<cluster>-app` Secret is the one the operator
+  maintains). On a cluster that already runs, `bootstrap` is immutable, so
+  the database is created once by hand — `psql` on the primary as the
+  `postgres` OS user, the same `CREATE DATABASE ... OWNER ...;` — and it
+  stays: the kind declares databases only at bootstrap, so nothing in its
+  declaration reconciles them away. OpenBao creates its own tables on
+  first start, so the owner role needs no further grant.
+- **Order matters, and the failure is loud.** The server pings the
+  database with a short backoff and then exits with `failed to connect to
+  postgres` — a crash-looping pod whose log names the cause — so the
+  database and its `openbao` database exist before the vault deploys; a
+  host declared by reference to the `KubernetesPostgres` orders the deploy
+  for you.
+- **Unseal every pod, on either engine.** Shamir unseal is a per-server
+  operation; a second PostgreSQL-stored replica is sealed until it is
+  unsealed too (an `autoUnseal` arm removes the step on both engines).
+- **The bad day on PostgreSQL storage is the database's restore, then an
+  unseal.** A server pointed at a database that already holds a vault
+  finds it initialized and sealed — no `bao operator init`, ever, on a
+  restored database; a Shamir vault is unsealed with the source's shares,
+  an auto-unsealed one opens itself. When the recovered cluster carries a
+  new name, re-declare the vault's `host` and `passwordSecret` references
+  to it and restart the pods (config changes never roll them; delete the
+  pods to pick up the new environment). The Raft runbooks below do not
+  apply to this engine.
+
+What breaks when the choice is wrong is caught early, by design: a `backup`
+block on PostgreSQL storage is refused at validation with the reason
+(snapshots exist only for Raft; the database's backup is the vault's), and
+a data volume has no field to be written in outside the Raft arm. What is
+NOT caught is the strategic mismatch — a team that wanted one backup for
+the whole platform running a Raft vault with its own snapshot store beside
+the database's archive, two stories to rehearse where one was wanted; or a
+team whose vault must survive the database's loss storing inside it. Ask
+which of the two the customer means before proposing.
+
+On the architecture diagram the choice is visible: PostgreSQL storage draws
+edges from the vault to the `KubernetesPostgres` node (its host) and to
+that database's credential Secret (its password), so the dependency is a
+real, customizable node in the graph; Raft draws nothing but the vault's
+own volume. The multi-kind view of the same decision — where the store,
+the identity, and the restore live for every stateful kind — is the
+[disaster-recovery pattern](../../_patterns/stateful-kind-disaster-recovery.md#choices-and-consequences).
+
+## The self-hosted secrets chain
+
+OpenBao is the backend that completes an in-cluster External Secrets
+story with no cloud dependency: this component + a
+[KubernetesClusterSecretStore](../kubernetesclustersecretstore/GUIDE.md)
+whose Vault arm points at its endpoint + KubernetesExternalSecret
+declarations in each consuming namespace. Every hop of that chain is a
+typed, referenceable node.
+
+## Backups and restore
+
+A vault holds the one copy of every secret its consumers depend on, so a
+proposal that deploys OpenBao without saying where its backups go is
+incomplete. The kind's `backup` block declares scheduled Raft snapshots to
+an object store — S3 (or any S3-compatible store), Google Cloud Storage,
+Azure Blob, or Cloudflare R2 — each in that store's own vocabulary, by
+reference to the catalog's bucket, identity, and token kinds; the `restore`
+block declares a fresh cluster's recovery from that store. What the module
+renders and what it asks of the operator:
+
+- **A CronJob, `<name>-backup`, on the server's own image plus rclone.**
+  Every run logs in to OpenBao with its own ServiceAccount (`<name>-backup`)
+  through the Kubernetes auth method, streams a snapshot with the `bao` CLI,
+  ships it to `<prefix>/<name>-<UTC timestamp>.snap`, and prunes objects
+  under the prefix older than `retentionDays`. Snapshots exist only for
+  integrated Raft storage — `backup` requires `server.raft` (the default
+  engine; a single-node Raft server is `replicas: 1`). A vault stored in
+  PostgreSQL is backed up by its database and refuses `backup`.
+- **One prefix per live vault.** Retention prunes under the prefix, so two
+  live vaults must never share one; a restore target deliberately declares
+  its source's prefix, and that is the only sharing there is.
+- **The login recipe is the one step the module cannot take.** OpenBao is
+  sealed at deploy; the policy, auth mount, and role the job logs in with
+  are API writes INSIDE the vault, after initialization. The recipe is four
+  commands (next section); until it runs, every backup run fails and its log
+  prints the recipe with the real names. The kind exports the names it
+  rendered (`backup_service_account_name`, `backup_policy_name`,
+  `backup_auth_role`, `backup_cron_job_name`) so the recipe is copy-paste
+  from the outputs.
+- **A declared restore requires auto-unseal — the SAME key on source and
+  target.** A snapshot is protected by the seal key that took it; with the
+  same KMS key or the same transit key on both sides a restore is a single
+  call. Shamir clusters back up like any other; their restore is the manual
+  runbook below.
+- **Restore mode suspends backups.** While `restore` is declared the
+  target's CronJob renders `suspend: true`: a fresh vault sharing the
+  source's prefix would otherwise snapshot an empty vault into it, prune the
+  source's snapshots, and let `restore.latest` pick its own empty snapshot.
+  After the restore completes, remove `restore` and apply again to resume.
+- **The seal is checked at server START.** Every seal backend reaches for
+  its key while the server configures itself; a key that is missing or
+  unreachable makes the pod crash-loop with "Error configuring seal". Create
+  the KMS key (or enable the transit engine) and grant the identity BEFORE
+  the vault, in the same dependency-ordered set.
+
+Keyless where the cloud allows: `gcs.keyless` on GKE (Workload Identity),
+`s3.keyless` on EKS (IRSA), `azureBlob.keyless` on AKS — each paired with
+`backup.workloadIdentity`, the shared identity seam that annotates the job's
+ServiceAccount. R2 has no keyless posture from any cluster; its credential
+is a `CloudflareAccountApiToken`, referenced.
+
+What is proven live, and what is not: the S3 arm with keys (against the
+catalog's own SeaweedFS) and the restore through the transit seal run on
+every kind lane; the keyless GCS arm and the R2 arm, each with a restore on
+the same Cloud KMS key, run on GKE. The Azure Blob arm and the keyless S3
+arm (IRSA) render and validate on both engines but have no live lane until
+an AKS or EKS cluster joins the proof batch — declare them, and expect to be
+the first to run them.
+
+## Day-2 operations
+
+- **Confirm a snapshot landed from the run's own log**, not from your
+  laptop's view of the bucket. A run ends with `Uploaded <store>/<prefix>/<name>-<UTC>.snap`
+  followed by the `Pruned N snapshot(s) …` line; a listing made with your
+  own credentials proves that YOU can read the bucket, not that the job's
+  identity can write it (the catalog's own proof lists the store from
+  inside the cluster, through the job's ServiceAccount, for exactly this
+  reason). `kubectl create job --from=cronjob/<name>-backup -n <namespace> <name>-backup-now`
+  then `kubectl logs -n <namespace> job/<name>-backup-now` is the
+  two-command check after any change to the store, the identity, or the
+  vault's login.
+- **Rehearse a restore beside the live source with its own prefix.** A
+  clone or a migration rehearsal is a second `KubernetesOpenBao` with a
+  different name, `restore.snapshotKey` (never `latest` — the source keeps
+  writing), and the source's `backup` block so it can read the source's
+  prefix. The moment you remove `restore` to finish, the clone's schedule
+  resumes INTO that shared prefix and its retention starts pruning the
+  source's snapshots — so change `backup.objectStore.prefix` to the
+  clone's own in the same apply that removes `restore`. The bad-day
+  restore has no such step: the source is gone, and the target inherits
+  its prefix on purpose.
+- **Auditing is declared, then the pods are recreated.** `server.audit`
+  is the only way to turn auditing on (OpenBao 2.4 and later refuse
+  `bao audit enable` over the API), and the server reads it at start —
+  so after the apply that adds or changes it, delete the server pods one
+  at a time, standbys first, unsealing each unless a seal arm is
+  declared. `bao audit list` on the active server then shows the device
+  (`stdout/` or `file/`). Keep the default `stdout` sink unless something
+  rotates the file: with the `file` sink, a full audit volume makes
+  OpenBao refuse every request until space is freed.
+- **Metrics on a multi-cluster hub: drop OpenBao's `cluster` label.**
+  `metrics.enabled` opens `/v1/sys/metrics` to an unauthenticated read
+  (the namespace's network policy decides who reaches it). OpenBao labels
+  every series `cluster` with its own cluster id, and a Prometheus adds
+  its external `cluster` label only to series that lack one, so with
+  `metrics.service_monitor_enabled` the vault's series name a random id
+  where every other series names the Kubernetes cluster. Where several
+  clusters report to one hub, keep the switch off and declare a
+  [KubernetesServiceMonitor](../kubernetesservicemonitor/GUIDE.md) on the
+  active node's Service (`openbao-active: "true"`, port `http`, path
+  `/v1/sys/metrics`, `params: {format: {values: [prometheus]}}`) with a
+  `metric_relabelings` step `{regex: cluster, action: labeldrop}`.
+  `vault_core_unsealed` then reads 1 per vault, by the Kubernetes cluster.
+  It never reads 0: a sealed node is neither active nor ready (its
+  readiness check is `bao status`), so it leaves that Service and its
+  series vanish. Alert on the workload instead,
+  `kube_statefulset_status_replicas_ready{statefulset="<name>"} == 0`,
+  which reads sealed and down alike.
+- **"Restore again" is a changed declaration, never a deleted Job.** The
+  restore Job is named by a hash of the declaration; naming a different
+  `snapshotKey` (or switching to `latest`) is a new Job and a new restore.
+  Deleting the finished Job by hand does the same thing without the
+  intent: the next apply recreates it and installs the snapshot over
+  whatever the cluster has written since.
+
+## The login recipe
+
+Run once, after `bao operator init`, with a token that can manage auth
+methods and policies (the initial root token works), against the vault's
+API. The names are the kind's outputs; with the defaults they are all
+`<name>-backup` and the auth mount is `kubernetes`:
+
+```bash
+bao policy write <name>-backup - <<'POLICY'
+path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+POLICY
+bao auth enable -path=kubernetes kubernetes
+bao write auth/kubernetes/config kubernetes_host="https://kubernetes.default.svc:443"
+bao write auth/kubernetes/role/<name>-backup \
+  bound_service_account_names=<name>-backup \
+  bound_service_account_namespaces=<namespace> \
+  token_policies=<name>-backup token_ttl=1h
+```
+
+Taking a snapshot is a plain `read` on `sys/storage/raft/snapshot` — not a
+sudo operation — so that one path is the whole policy. The Kubernetes auth
+method validates the job's token through TokenReview, which is why `backup`
+requires `serviceAccount.authDelegatorEnabled` (the default). To take a
+snapshot now rather than at the next schedule:
+`kubectl create job --from=cronjob/<name>-backup -n <namespace> <name>-backup-now`.
+
+After a restore, the restored state carries the SOURCE's role, bound to the
+source's ServiceAccount name and namespace: a target with the same name and
+namespace resumes backups untouched; a renamed one runs the recipe again.
+
+## Disaster recovery on GKE: the resource set
+
+"Sealed by a key no human holds, backed up keylessly, restorable by
+declaration" is nine catalog resources on the GCP side and the Kubernetes
+side together — every one a kind in this catalog, wired by reference. The
+`gcp-gke` lane deploys exactly this set.
+
+| # | Resource | What it is for | Wiring |
+|---|---|---|---|
+| 1 | `GcpServiceAccount` (e.g. `bao-unseal`) | The SERVER's identity: wraps and unwraps the master key — KEYLESS | — |
+| 2 | `GcpServiceAccount` (e.g. `bao-backup`) | The BACKUP JOB's identity: writes and prunes snapshots — KEYLESS. Two identities on purpose: the seal key and the snapshot bucket are different blast radii | — |
+| 3 | `GcpKmsKeyRing` | Holds the unseal key. Permanent by GCP design — it can never be deleted and its name is occupied forever | `location` = the region the vault runs in |
+| 4 | `GcpKmsKey` | The unseal key. A declared restore needs the SAME key on source and target | `keyRingId` by reference to #3; `deletionPolicy: PREVENT` in production — destroying the key destroys every vault sealed by it |
+| 5 | `GcpKmsKeyIamMember` (two per key) | Lets the server use the key AND read it | `cryptoKeyId` by reference to #4's `key_id`, `member` by reference to #1's `member`; one with `role: roles/cloudkms.cryptoKeyEncrypterDecrypter` (wrap on init, unwrap on every unseal) and one with `role: roles/cloudkms.viewer` — the server checks the key exists when it configures its seal at START, and the encrypter-decrypter role does not carry `cloudkms.cryptoKeys.get`; with only the first role the pod crash-loops on "Error configuring seal" before init can open |
+| 6 | `GcpGcsBucket` | The snapshot store | `iamMembers`: **two** roles for #2 — `roles/storage.objectAdmin` AND `roles/storage.legacyBucketReader` (rclone reads the bucket's attributes before writing; objectAdmin alone does not carry `storage.buckets.get`) — `member` by reference to #2's `member` |
+| 7 | `GcpGkeWorkloadIdentityBinding` (two per vault) | Lets the KSAs act as the identities | for the server: `ksaName` = the vault's `metadata.name` (the chart names the ServiceAccount after the release) bound to #1; for the job: `ksaName` = `<name>-backup` bound to #2; `ksaNamespace` = the vault's namespace. A restore target is another vault and needs its own pair |
+| 8 | `KubernetesOpenBao` (the production vault) | Raft + auto-unseal + backups | `server.raft` with `server.replicas: 3`, `autoUnseal.gcpKms` with `keyRing` and `cryptoKey` by reference to #3/#4 (bare names) and `workloadIdentityServiceAccount` by reference to #1, `backup.objectStore.gcs.bucket` by reference to #6 with `keyless: true`, `backup.workloadIdentity.gke.serviceAccountEmail` by reference to #2, a `prefix` of its own |
+| 9 | `KubernetesOpenBao` (the restore target, on the bad day) | Restore | the same `autoUnseal` (the same key), the same `backup` block INCLUDING the source's `prefix`, `restore.latest: true` (or a `snapshotKey`), `restore.rootToken` naming the Secret you will create after init; the SOURCE's name and namespace, so #7's pair and the restored login role carry over (a target under another name needs its own #7 pair and re-runs the login recipe) |
+
+Where each piece of the set lives, validated: rows 2, 6, and 7 are the
+[GKE keyless store set](../../_patterns/stateful-kind-disaster-recovery.md#the-gke-keyless-store-set-complete)
+in the disaster-recovery pattern (the same three nodes PostgreSQL stands on);
+row 8 is the `04-gke-ha-gcs-backups` preset (named by slug — presets ship in
+the release's `presets.zip` and in the catalog repository, not in the
+skill's pack); row 9 is the complete manifest under
+[Restore on the bad day](#restore-on-the-bad-day). Rows 1, 3, 4, and 5 — the
+seal set — are the vault's alone, so they are here:
+
+```yaml
+apiVersion: gcp.planton.dev/v1alpha1
+kind: GcpServiceAccount
+metadata:
+  name: openbao-unseal
+spec:
+  serviceAccountId: openbao-unseal
+  projectId:
+    value: my-gcp-project
+  displayName: OpenBao auto-unseal via Workload Identity
+  description: Keyless identity the OpenBao server pods assume through GKE Workload Identity to wrap and unwrap the master key with the Cloud KMS key
+---
+apiVersion: gcp.planton.dev/v1alpha1
+kind: GcpGkeWorkloadIdentityBinding
+metadata:
+  name: openbao-unseal-wi
+spec:
+  projectId:
+    value: my-gcp-project
+  serviceAccountEmail:
+    valueFrom:
+      kind: GcpServiceAccount
+      name: openbao-unseal
+      fieldPath: status.outputs.email
+  ksaNamespace: openbao
+  # The chart names the server ServiceAccount after the release, so this is
+  # the vault's metadata.name. A restore target is another vault and needs
+  # its own binding on the same identity.
+  ksaName: openbao
+---
+apiVersion: gcp.planton.dev/v1alpha1
+kind: GcpKmsKeyRing
+metadata:
+  name: openbao-unseal
+spec:
+  projectId:
+    value: my-gcp-project
+  # Permanent by GCP design: the ring can never be deleted and its name is
+  # occupied in this project and location forever.
+  keyRingName: openbao-unseal
+  location: asia-south1
+---
+apiVersion: gcp.planton.dev/v1alpha1
+kind: GcpKmsKey
+metadata:
+  name: openbao-unseal
+spec:
+  keyRingId:
+    valueFrom:
+      kind: GcpKmsKeyRing
+      name: openbao-unseal
+      fieldPath: status.outputs.key_ring_id
+  keyName: openbao-unseal
+  # Destroying the key destroys every vault sealed by it; PREVENT is the
+  # production posture.
+  deletionPolicy: PREVENT
+---
+apiVersion: gcp.planton.dev/v1alpha1
+kind: GcpKmsKeyIamMember
+metadata:
+  name: openbao-unseal-encrypter-decrypter
+spec:
+  cryptoKeyId:
+    valueFrom:
+      kind: GcpKmsKey
+      name: openbao-unseal
+      fieldPath: status.outputs.key_id
+  # Wrap on init, unwrap on every unseal — the role the seal USES the key with.
+  role:
+    value: roles/cloudkms.cryptoKeyEncrypterDecrypter
+  member:
+    valueFrom:
+      kind: GcpServiceAccount
+      name: openbao-unseal
+      fieldPath: status.outputs.member
+---
+apiVersion: gcp.planton.dev/v1alpha1
+kind: GcpKmsKeyIamMember
+metadata:
+  name: openbao-unseal-viewer
+spec:
+  cryptoKeyId:
+    valueFrom:
+      kind: GcpKmsKey
+      name: openbao-unseal
+      fieldPath: status.outputs.key_id
+  # The second grant: the server READS the key's metadata when it configures
+  # its seal at START, and the encrypter-decrypter role does not carry
+  # cloudkms.cryptoKeys.get. Without this one the pod crash-loops on "Error
+  # configuring seal" before init can open.
+  role:
+    value: roles/cloudkms.viewer
+  member:
+    valueFrom:
+      kind: GcpServiceAccount
+      name: openbao-unseal
+      fieldPath: status.outputs.member
+```
+
+## Disaster recovery with Cloudflare R2: the resource set
+
+The same story with the snapshots outside the cloud that runs the vault —
+in a Cloudflare R2 bucket declared from the catalog. R2 speaks S3, so rclone
+reaches it through its S3 code path, but the vault declares the store in
+R2's own terms and the module does the translation (the jurisdiction's
+endpoint host, region `auto`, path-style addressing, the token as an S3 key
+pair). The seal is whatever the cluster offers (the KMS trio above on GKE);
+the store is R2 from anywhere. The `gcp-gke` lane deploys this set beside
+the GCS one.
+
+| # | Resource | What it is for | Wiring |
+|---|---|---|---|
+| 1 | `CloudflareR2Bucket` | The snapshot store | `jurisdiction` fixed at creation (`default`, `eu`, `fedramp`, `us`) — it decides which host serves the bucket; exports `bucket_name`, `account_id`, `jurisdiction` |
+| 2 | `CloudflareAccountApiToken` (e.g. `bao-snapshots-writer`) | The credential — R2 has NO keyless posture from any cluster | one policy: permission group `Workers R2 Storage Bucket Item Write` on resource `com.cloudflare.edge.r2.bucket.<account>_<jurisdiction>_<bucket>` (least privilege: objects in this bucket only); exports the token as the S3 key pair, `r2_access_key_id` + `r2_secret_access_key` |
+| 3 | `KubernetesOpenBao` (the production vault) | Raft + auto-unseal + backups | `server.raft` with `server.replicas: 3`, an `autoUnseal` arm, `backup.objectStore.r2` with `bucket`, `accountId`, `jurisdiction` by reference to #1 and `credentials` by reference to #2, a `prefix` of its own. No `backup.workloadIdentity` — nothing on the cluster side identifies the job to R2 |
+| 4 | `KubernetesOpenBao` (the restore target) | Restore | the same `autoUnseal` (the same key), the same `r2` store and `prefix`, `restore.snapshotKey` (or `latest`), `restore.rootToken` |
+
+Three R2 facts join the rules above:
+
+- **The token is the key.** Rotating the token (or deleting and recreating
+  it) mints a new key pair; the vault follows the references on its next
+  apply. A token without an R2 permission group authenticates and then
+  fails every upload with AccessDenied — the permission group is the grant,
+  there is no bucket-side policy to attach.
+- **The module owns the S3 dialect.** rclone's Cloudflare provider profile
+  (path-style addressing, no multipart ETags) is selected for the `r2` arm;
+  nothing S3-shaped is typed in the manifest.
+- **Emptying the bucket is yours.** Deleting a `CloudflareR2Bucket` that
+  still holds objects is refused by Cloudflare (the provider has no
+  force-destroy); retire a snapshot store by emptying the bucket over the S3
+  API (`aws s3 rm --recursive`, against the account's R2 endpoint with the
+  token's pair) before destroying it.
+
+Where each piece lives, validated: rows 1 and 2 are the R2 store pair and
+row 3 is the vault on it, both embedded whole in the
+[disaster-recovery pattern](../../_patterns/stateful-kind-disaster-recovery.md#the-composition)
+(row 3 is the `05-production-ha-r2-backups` preset by slug); row 4 is the
+restore target under [Restore on the bad day](#restore-on-the-bad-day) with
+the `r2` store from row 3 in place of the `gcs` one — the `restore` block
+and the seal are identical.
+
+## Restore on the bad day
+
+The original is gone; the snapshots are in the store; the seal key still
+exists. Declare a fresh `KubernetesOpenBao` with the same `autoUnseal`
+key, the source's `backup` block (same store, same `prefix`), and a
+`restore` block — `latest: true`, or the exact `snapshotKey` from the
+store's listing (any listing serves to pick a key: `gcloud storage ls
+gs://<bucket>/<prefix>/`, or the R2 endpoint with the token's pair) — naming
+the Secret the root token will live in. **Keep the source's name and
+namespace.** The lost vault's Workload Identity bindings name its server
+ServiceAccount and its `<name>-backup` job ServiceAccount, and the restored
+state's login role is bound to the same names — a target with the source's
+name and namespace inherits all of it and resumes backups untouched; a
+different name needs its own binding pair and a re-run of the login recipe
+(that is the rehearsal-beside-a-live-source shape, not the bad day's). The
+whole bad-day declaration for the GKE set above, validated — the production
+manifest plus `restore`, with `createNamespace` because the lost cluster's
+namespace is gone too:
+
+```yaml
+apiVersion: kubernetes.planton.dev/v1alpha1
+kind: KubernetesOpenBao
+metadata:
+  # The source's name: its bindings, its login role, and its prefix all
+  # match without a change.
+  name: openbao
+spec:
+  namespace:
+    value: openbao
+  # The bad day starts from an empty cluster; the target owns its namespace.
+  # A rehearsal beside a live source omits this and joins the source's.
+  createNamespace: true
+  server:
+    raft:
+      dataStorage:
+        size: 10Gi
+    replicas: 3
+  # The SAME key the source was sealed with — the snapshot is protected by it.
+  autoUnseal:
+    gcpKms:
+      project:
+        value: my-gcp-project
+      region: asia-south1
+      keyRing:
+        valueFrom:
+          kind: GcpKmsKeyRing
+          name: openbao-unseal
+          fieldPath: status.outputs.key_ring_name
+      cryptoKey:
+        valueFrom:
+          kind: GcpKmsKey
+          name: openbao-unseal
+          fieldPath: status.outputs.key_name
+      workloadIdentityServiceAccount:
+        valueFrom:
+          kind: GcpServiceAccount
+          name: openbao-unseal
+          fieldPath: status.outputs.email
+  # The source's backup block, prefix included: the target reads the
+  # source's snapshots through the same identity the source wrote them with.
+  # While `restore` is declared this schedule renders suspended.
+  backup:
+    schedule: "0 * * * *"
+    retentionDays: 14
+    objectStore:
+      prefix: openbao/openbao
+      gcs:
+        bucket:
+          valueFrom:
+            kind: GcpGcsBucket
+            name: openbao-snapshots
+            fieldPath: status.outputs.bucket_name
+        keyless: true
+    workloadIdentity:
+      gke:
+        serviceAccountEmail:
+          valueFrom:
+            kind: GcpServiceAccount
+            name: openbao-backup
+            fieldPath: status.outputs.email
+  restore:
+    latest: true
+    rootToken:
+      name: bao-init-root
+      key: token
+```
+
+`latest` is the newest object under the prefix at the moment the restore Job
+fetches it. On the bad day that is the last snapshot the lost vault wrote. If
+the source is still alive — a clone, a migration rehearsal — its CronJob
+keeps writing, and "newest" moves under you; name the `snapshotKey` you mean
+(the `gke-gcs-backup-restore` lane learned this by restoring a snapshot the
+live source had just taken on its hourly schedule).
+
+Then the one manual step every OpenBao has: initialize the fresh cluster.
+With auto-unseal, init returns recovery keys and a root token, and the
+server unseals itself. The `1`/`1` recovery shares below are the proof
+lane's value; production splits the recovery key across its key holders
+(`-recovery-shares=5 -recovery-threshold=3` is the usual shape) exactly as
+it would split unseal keys for a Shamir vault — under auto-unseal they never
+unseal anything; they authorize the operations that need a quorum, such as
+`generate-root`.
+
+```bash
+kubectl exec -n <namespace> <name>-0 -- bao operator init -recovery-shares=1 -recovery-threshold=1 -format=json
+kubectl create secret generic bao-init-root -n <namespace> --from-literal=token=<root_token>
+kubectl logs -n <namespace> job/<restore_job_name> -f   # the restore_job_name output
+```
+
+The restore Job was already waiting for that Secret; it fetches the
+snapshot, installs it, and prints the two closing steps: remove `restore`
+from the spec and apply again (backups resume), and delete the Secret (the
+token it held no longer exists — the restored state carries the SOURCE's
+tokens, policies, auth methods, and login role). Read the vault with the
+source's root token from here on. The `behavioral-backup-restore` lane runs
+exactly this on a kind cluster through the transit seal.
+
+## Restore without auto-unseal: by hand
+
+A Shamir vault has no key the module can point a restore at — the humans
+holding the shares are the key. Restore it by hand, with OpenBao's own
+tools; the module's snapshots are plain Raft snapshots and need nothing
+else:
+
+1. Deploy a fresh `KubernetesOpenBao` on Shamir with the source's `backup`
+   block and NO `restore` block; initialize and unseal it as usual.
+2. Fetch the snapshot from the store (`rclone copyto` with the same
+   remote the job uses, or any S3/GCS/Azure client) and copy it into pod 0.
+3. `bao operator raft snapshot restore -force <file>`. Without `-force`
+   OpenBao refuses a snapshot taken under other unseal keys ("could not
+   verify hash file, possibly the snapshot is using a different set of
+   unseal keys"); `-force` installs it anyway.
+4. The server seals itself after a forced restore, because the installed
+   state is protected by the SOURCE's unseal keys. Unseal every pod with
+   the source's shares, then log in with the source's root token.
+
+The declared restore exists to make steps 2–4 disappear; the seal key is
+what makes that possible.
+
+## Namespace ownership — the infra exception
+
+A dedicated namespace with `createNamespace: true` is the normal
+single-tenant shape — the
+[namespace-ownership pattern](../../_patterns/namespace-ownership.md)'s
+sole-tenant case.
+
+## On the diagram
+
+OpenBao renders in the shared-cluster layer; the cluster store's backend
+points at it and ExternalSecrets draw "reads from" edges into the store
+— the whole path from application credential back to the vault is
+visible, hop by hop. A declared `backup` draws the recovery path too: edges
+from the vault to the bucket, the token, and the job identity it
+references, and the node wears a `backup` fact (`restoring` while a
+`restore` is declared). A store declared by pasted literals draws nothing
+— which is the diagram's way of saying the credential lives nowhere the
+platform can see.
+
+## Pairs well with
+
+- KubernetesExternalSecretsOperator + KubernetesClusterSecretStore +
+  KubernetesExternalSecret — the self-hosted chain above.
+- KubernetesIngress / route kinds — only when the API must be reachable
+  from outside the cluster; composed, never embedded.
+- GcpGcsBucket / CloudflareR2Bucket + CloudflareAccountApiToken /
+  KubernetesSeaweedFs — the snapshot store, by reference from `backup`;
+  GcpServiceAccount + GcpGkeWorkloadIdentityBinding for the keyless job
+  identity; the GcpKmsKeyRing / GcpKmsKey / GcpKmsKeyIamMember trio for the
+  seal a declared restore depends on (the resource sets above).
+- The [stateful-kind disaster-recovery pattern](../../_patterns/stateful-kind-disaster-recovery.md)
+  — the store, identity, and restore shape this vault shares with the
+  PostgreSQL and MongoDB kinds, stated once.

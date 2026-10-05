@@ -2,11 +2,11 @@
 
 A person asking to "set up monitoring" on a cluster is asking one question:
 will someone know when this breaks, before a user says so? This reference is
-the craft for answering it with the catalog's assembled stack. Component
+the craft for answering it with the catalog's assembled stack. Kind
 facts (every field, default and validation) live in the catalog pack, on
 `KubernetesKubePrometheusStack`'s reference page and guide and in the
 observability-stack pattern; read them there, never from memory.
-`kubernetes-architecture.md` covers what else runs on the cluster, and
+`cloud.kubernetes-architecture.md` covers what else runs on the cluster, and
 `infra.config-references.md` covers the `$secret/` grammar.
 
 ## What "monitored" means
@@ -23,6 +23,40 @@ every proposal to that bar and say so plainly when a plan stops short of it.
    kind's `serviceMonitor` toggle needs. Each cluster keeps its OWN
    Alertmanager, so a cluster pages on its own and a central hub going down
    never silences it.
+   - **What the cluster installed before the stack is watched from the
+     stack's side.** The gateway, istiod, cert-manager, external-dns and
+     the database operator come with the cluster, before the monitor CRDs
+     exist, so their own `serviceMonitor` switches stay off (on a fresh
+     cluster they fail the install). Declare one class monitor per kind of
+     component beside the stack instead: a `KubernetesPodMonitor` or
+     `KubernetesServiceMonitor` with `namespace_selector: {any: true}` and
+     a selector every instance carries (the PodMonitor's `istio-gateways`
+     preset; `cnpg.io/podRole: instance` for every CloudNativePG
+     instance). Components installed after the stack (an environment's
+     vault, caches, workflow engine) turn their own switches on.
+   - **Every namespace with a NetworkPolicy admits the stack's Prometheus**
+     on the metrics ports, in one peer (namespace
+     `kubernetes.io/metadata.name: <stack namespace>` with pods
+     `app.kubernetes.io/name: prometheus`), applied before the monitors. A
+     fenced target reads down with a dial timeout and posts `TargetDown`
+     ten minutes later.
+   - **Read the serving code for the port.** A Planton runner and runner
+     tunnel (embedded konnectivity) serve `/metrics` on their health port
+     (8093); their admin port listens on the pod's loopback only. Neo4j
+     community serves no metrics at all.
+   - **Read what a new component's series carry, at its first scrape.**
+     A series that already has `cluster` keeps it over the stack's
+     external label (OpenBao's own cluster id: drop it with a
+     `labeldrop`); a component's own monitor switch keeps every series
+     (Temporal's per-task-queue histograms, about 150,000 series per idle
+     environment: declare the monitor with a keep list instead); a metric
+     naming its subject's namespace needs `honor_labels` (cert-manager's
+     certificates). Compare `scrape_samples_post_metric_relabeling` with
+     the hub's storage budget before you leave it running.
+   - **On GKE, turn the managed collection off** on the cluster:
+     `monitoring.managed_prometheus_enabled: false` with
+     `monitoring.components: [SYSTEM_COMPONENTS]` in one update (an empty
+     list keeps the billed packages).
 2. **Alert delivery in the same change**: `alertmanager.notifications`, not
    a follow-up. Out of the box Alertmanager notifies nobody.
 3. **The outside heartbeat**: `notifications.heartbeat` to a monitor that
@@ -83,8 +117,9 @@ Ask these before composing, in the person's words, not the chart's:
   misreads work done on purpose (Tekton build pods read not-ready once a
   step ends; a build machine sits at full CPU) is replaced, not muted:
   disable it and declare the same alert name in a `KubernetesPrometheusRule`
-  that leaves the work out (`kube_pod_owner{owner_kind!~"Job|TaskRun"}`;
-  `unless` the build taint in `kube_node_spec_taint`), keeping upstream's
+  that leaves the work out (`kube_pod_owner{owner_kind!~"Job|TaskRun"}`,
+  and every pod on a build machine, whose pods all go not ready when it
+  goes dark; `unless` the build taint in `kube_node_spec_taint`), keeping upstream's
   `for`, severity and `namespace` label (Alertmanager's info inhibition
   matches on it). Then the work's real failure needs its own alert: a
   build machine that runs out of memory goes dark and is replaced before
@@ -198,7 +233,7 @@ Ask these before composing, in the person's words, not the chart's:
   question, with each panel's description the question it answers;
   offer that before any generic community dashboard. Grafana refuses to
   save over a provisioned dashboard, so tell the person screens change
-  only through the files. In an infra chart, keep double braces out of
+  only through the files. In an Infra Chart, keep double braces out of
   the dashboard JSON (the chart engine renders it): pretty-print it and
   name series with `${__field.labels.<label>}` display names.
 - **When several clusters report to one hub, answer per cluster.** Join
@@ -291,13 +326,157 @@ to decide with the person, and what to watch for:
   in-cluster alerting. Read them with the person and list their causes;
   never silence one by hand.
 
+## The user's own software: metrics, traces and logs that lead to each other
+
+Once the platform's components report, the user's own services are next.
+The goal is three signals per request that lead to each other: a count
+of how each call ended, a trace of what it did, and log lines carrying
+that trace's id. Compose it like this:
+
+- **Measure success inside the service, not only at the gateway.** A
+  gRPC-Web door (and any API that wraps errors in a 200) answers HTTP 200
+  for a failed call, so a gateway's 5xx share misses it. Count every
+  call by its gRPC status in a server interceptor placed outside
+  authentication (refusals count). Split the status codes into the
+  caller's (INVALID_ARGUMENT, NOT_FOUND, PERMISSION_DENIED, UNAUTHENTICATED,
+  CANCELLED...) and the service's own (INTERNAL, UNKNOWN, UNAVAILABLE,
+  DEADLINE_EXCEEDED, UNIMPLEMENTED, DATA_LOSS); only the second class
+  spends an error budget. The burn rule adds the gateway's 5xx to both
+  sides of the ratio, so a dead service, which emits nothing, still burns.
+  Leave long polls out of latency and out of the budget, or a minute-long
+  wait reads as slow and its deadline as a failure. An authentication
+  step that cannot run (its key cache is down) should answer UNAVAILABLE,
+  not UNAUTHENTICATED: that is the platform's failure, and the caller's
+  next step is to retry, not to sign in again.
+- **Serve the scrape on a private port.** Use a named port (`metrics`) that
+  no route reaches, a `KubernetesServiceMonitor` per path, and the
+  namespace's network policy admitting the agent's Prometheus on that
+  port. Name labels `rpc_service` and `rpc_method`: a label called
+  `service` collides with the one Prometheus stamps on every scraped
+  series and arrives renamed `exported_service`. Deny per-method library
+  meters at the source, before keep-lists at the monitor: a gRPC
+  framework's own metrics, for example, add a histogram per method.
+- **Traces go to a gateway collector of their own,** not the node log
+  reader. The log DaemonSet blocks when its queue fills, because a lost
+  line is lost evidence; an application must never stall behind its
+  telemetry. Run a small `KubernetesOtelCollector` in deployment mode
+  (the catalog's traces-gateway preset), OTLP/HTTP on 4318, with a
+  network policy admitting only the user's own namespaces, so a
+  workload sharing the cluster cannot write into the trace store.
+- **JSON logs whose trace ids the collector reads.** Have the service
+  write one JSON object per line with `trace_id` and `span_id` as
+  top-level fields. In the log collector, after the `container`
+  operator, add a conditional `json_parser`, then a `trace_parser` that
+  sets the record's trace context, then `remove` for the two attributes
+  (otherwise the store receives them twice), then a `severity_parser`
+  and a `move` of the message to the body. Loki then keeps `trace_id`,
+  and Grafana's derived field opens the trace from the line.
+- **Name each line's service after its workload.** A `KubernetesDeployment`
+  names its container `app`, so Loki's `service_name` reads `app` for
+  every service. Give the log collector's `k8s_attributes` an explicit
+  `pod_association` on `k8s.pod.uid` (a file-read line has no connection
+  to match), and extract the pod's `app` label as `service.name`. Then
+  `{service_name="control-plane"}` selects one service, and matches the
+  service name its traces carry.
+- **The id in the log must be the id that was stored.** A server that
+  roots a trace under an invented all-zero parent span gets a brand-new
+  random trace id from the SDK (the parent is invalid), so its log lines
+  name a trace that does not exist. Root a true span and log the span's
+  own id. Re-apply the id around every callback: a gRPC call's callbacks
+  run on any executor thread, and a thread-local set once when the call
+  is accepted mislabels the handler's lines.
+- **Count an event where it becomes durable.** Count a deployment's start
+  or its ending once, at the write that first records it, by comparing
+  with the stored row. Never count in replayed workflow code or on every
+  checkpoint.
+- **Make the trace speak the count's language.** A span's error status
+  marks every non-OK answer, a caller's own NOT_FOUND included, so a list
+  of "failed requests" built on `status=error` lists the callers'
+  mistakes. Long polls and streams are also the slowest spans, so a list
+  of "slow requests" fills with them. Record on the server span the
+  classification the count already makes, from the same function: the
+  outcome (`ok`, `caller_error`, `server_fault`) and the call's kind
+  (`unary`, `streaming`, `long_held`). End the span on a cancel or a
+  handler throw the way the count does. Then a TraceQL query on the
+  outcome lists exactly what the burn measures, and one on unary calls
+  over a second lists exactly what the latency objective measures.
+- **Open the server span where the count's timer starts.** Put the
+  tracing interceptor in the same slot as the counting one, outside
+  authentication. Otherwise a sign-in that takes a second, and every call
+  refused at sign-in (an authentication backend that cannot answer
+  included), is in the count and its latency but in no trace.
+- **Fold tenant-named queues into classes.** A workflow engine's per-tenant
+  task queues (one per organization, say) carry a customer's name into
+  every series label. Map them to a class (`label_replace` on the queue
+  name) before a dashboard or an alert reads them, so no screen and no
+  alert message names a customer.
+
+- **A counter that appears on first use reads zero where its software
+  reports, and blank where it does not.** A restarted service has counted
+  nothing yet, so its series are absent, not zero. Fall back to
+  `0 * up{job="<service>", endpoint="metrics"}` for its environment: zero
+  where the service serves its metrics, a blank (said in words) where an
+  older release serves none.
+- **Stage a drill with traffic that reaches the dependency.** An idle
+  environment shows nothing when a dependency fails, and some calls (cached
+  lists, searches) never ask it. Drive reads that do, for the length of
+  the window, then let someone who was not told what broke diagnose it from
+  the screens alone.
+
+## The alerts that page, and the ones that post
+
+Write the user's page-class rules once the components they read are
+scraped (`KubernetesPrometheusRule`, beside each cluster's agent; the
+pattern's alert section is the reference). The ones a platform owes its
+customers, and how each misfires if written naively:
+
+- **A front door burning its error budget** (14.4x over 1h and 5m, 6x
+  over 6h and 30m of a 99.5% target). Record the gateway's traffic per
+  window once and alert on the recorded ratio; give the long window a
+  floor of failed requests, or two failures at night page at low traffic;
+  say that a gRPC call failing inside HTTP 200 is not counted. If the
+  user has a public status page that colours a part from an alert's
+  `component`, naming a burn rule after that part is a decision about
+  what customers read: ask, never assume.
+- **A database without a recent backup or archive.** Hold a database to a
+  backup only once it is older than the threshold (its volume's creation
+  time), or every new database pages before its first nightly; require
+  WAL segments waiting before calling an old archive stale.
+- **A certificate within seven days.** cert-manager renews 30 days
+  ahead, so also post "renewal overdue" to the channel three weeks
+  earlier.
+- **Channel alerts** for what fails quietly: the outside prober not
+  running (scraped by one agent, read without `absent()`), a Ready node
+  with no log collector (per node, by uid), a sealed vault (read from its
+  StatefulSet's ready pods: a sealed vault's own metrics vanish), a
+  workflow backlog aging, a runner tunnel holding no runner, and metrics
+  not reaching the hub.
+
+Each rule sets `environment` from its namespace when one cluster serves
+several environments (external labels never reach a rule's result),
+carries a runbook whose first line is a command, and has a promtool test.
+Prove each with a deliberately fired alert: a real failure where one can
+be declared safely (a podless Service behind one route answers 503 for a
+burn), a synthetic alert with the production labels on production's own
+Alertmanager otherwise, and `amtool config routes test` for every name
+the pager route lists.
+
+Silences are part of the design, not a click: one drops the alert before
+routing (the status page's webhook included), and one matching only an
+environment silences the heartbeat too. Give the user a command that
+silences one exact alert for at most a day, tied to a record.
+
 ## Proving it
 
 Do these with the person, and report what arrived and when:
 
 0. Minutes after install, confirm every active scrape target reads `up`
-   (Prometheus's targets page or API). A target that is down now is a
-   wrong scraper posture, not an incident.
+   (Prometheus's targets page or API) and every monitor has at least one
+   target (`/api/v1/scrape_pools` against the active targets: a monitor
+   whose selector matches nothing has no target and no error anywhere).
+   A target that is down now is a wrong scraper posture or a fence, not an
+   incident; a target that reads `unknown` was found since the last scrape,
+   so read again after one interval.
 1. Fire a channel alert from inside the Alertmanager pod:
    `amtool alert add alertname=Drill severity=warning environment=<env> --alertmanager.url=http://localhost:9093`.
    It must arrive in the channel, titled with the environment. Double-quote
