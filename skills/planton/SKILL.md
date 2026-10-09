@@ -1,6 +1,6 @@
 ---
 name: planton
-description: Planton's craft for cloud infrastructure, service delivery, and self-hosted Planton, for the Planton Assistant and coding agents (Cursor, Claude Code) in a repository. Infrastructure -- compose and troubleshoot Infra Charts (Jinja templating, valueFrom wiring), apply catalog object manifests as dependency-ordered sets, modify deployed Infra Stacks, feature flags for your own services. Service delivery -- register services, push-to-deploy pipelines, deploy/promote/rollback, serving domains, keyless CI on GitHub Actions, previews, local env vars. Self-hosted -- read and upgrade a PlantonPlatform run by the Planton operator, connect a company directory (Entra ID, Active Directory), map groups to roles, offboarding. Use when a user asks for or changes infrastructure, fixes a failed build or deploy, registers or deploys a service, sets up CI/CD, or administers their own Planton. Never mutate uninvited, never approve a deployment gate, never leave the workspace given. Not for authoring kind schemas.
+description: Planton's craft for infrastructure, service delivery, organization activity, and self-hosted administration, for coding agents including Codex, Cursor, and Claude Code. Use to compose or troubleshoot Infra Charts and deployed infrastructure; register, deploy, promote or roll back services; set up CI/CD; explain what changed, unread failures, or decisions awaiting the caller; review saved edits and proposed deployments; or administer a PlantonPlatform and company directory. Activity reads separate historical changes, personal inspection, and current approval eligibility. Never mutate uninvited, never approve a deployment gate, never leave the workspace given. Not for authoring kind schemas.
 ---
 
 # Planton
@@ -36,6 +36,13 @@ classes -- live in "Rules that prevent whole failure classes" below.
 - **Never approve a deployment gate, anywhere, for anyone.** Approval is a
   human decision; the assistant holds no approval rights. And never work
   around a refusal -- every refusal names its working path, so relay it.
+
+## Choose the work
+
+For activity, unread failures, pending reviews, or "what changed", read
+`references/craft.organization-activity.md` first. Follow its read-only
+workflow and capability checks; do not enter chart composition or probe with
+a chart build. A request to review a saved edit is not permission to deploy it.
 
 ## Know your instruments (check once, first)
 
@@ -451,6 +458,7 @@ Read the file whose "Read when" matches the moment; never answer from memory wha
 | `references/service.org-publishing.md` | Sharing a pipeline or a task across services: the `TektonPipeline`/`TektonTask` record shapes, the name law, publish order and the publish check, consuming by one line or a plain `taskRef`, what an update changes, the delete guards, listing what the organization published |
 | `references/service.delivery-verbs.md` | Deploying an image built anywhere, promoting between environments, rolling back, tag releases, feature-branch deploys, explaining a refused delivery |
 | `references/service.urls-and-rollout-verification.md` | Where a deployed service answers: URLs on the deployment record, reading the rollout verdict accurately |
+| `references/service.secret-backends.md` | Secrets should live in the person's own AWS Secrets Manager, Google Cloud Secret Manager or Azure Key Vault; where secrets live and what each place offers (hosted, Planton Desktop, self-hosted with the vault on or off: the default backend, platform vs local, ambient identity, keyless or not); how Planton signs in to that store (a cloud connection -- keyless stores nothing -- inline credentials, or ambient identity, refused on hosted); which connections can serve; where a new secret lands; the one-hop rule; moving a backend off a pasted key; a refused verify, create, connection delete or secret delete, or a self-hosted boot that can serve no backend, with every sentence and its remedy |
 | `references/service.pulling-private-images.md` | A pod in `ImagePullBackOff`, "do I need a pull secret", a run's pull sentence, a GHCR registry connected through a sign-in, or a Cloud Run / App Runner / Lambda target: the three ways a workload pulls, what the deploy fills from the registry connection and when it fills nothing, the GHCR pull token, the own-registry-only runtimes, the refusal and remedy sentences, previews and rotation, what never to suggest |
 | `references/service.serving-domains.md` | A service on the customer's own domain: the environment's serving-domain declaration, the hostname label, fill-blank injection, the `domain_serving` check |
 | `references/service.serving-domains-targets.md` | Per-target carrier truths (worker, ingress, HTTPRoute, Cloud Run domain mapping, ECS/ALB) and the remediation ladder for a failed `domain_serving` check |
@@ -481,7 +489,8 @@ Read the file whose "Read when" matches the moment; never answer from memory wha
 | `references/craft.discovery.md` | Starting a conversation; learning the person, their Planton, and the motive |
 | `references/craft.personalization.md` | A profile fact sheet is present; shaping ANY explanation |
 | `references/craft.profile-vocabulary.md` | Reading the fact sheet; what each Role/Goal/Team/Mode/Tool id means |
-| `references/craft.planton-cli.md` | Looking up charts, Infra Stacks, pipelines, connections; diagnosing failed deploys; the complete command map |
+| `references/craft.planton-cli.md` | Looking up charts, Infra Stacks, pipelines, connections, activity and versions; diagnosing failed deploys; the command map |
+| `references/craft.organization-activity.md` | What changed, unread failures, decisions awaiting the caller, reviewing exact saved edits or deployment proposals, and explicitly marking inspected failures |
 | `references/craft.cost-transparency.md` | The monthly cost picture from the catalog's verified estimates; honesty rules for money; saving levers |
 | `references/craft.filing-platform-gaps.md` | Planton fell short of a need; filing the gap as a GitHub issue |
 | `references/catalog.availability.md` | Which kinds an organization's catalog policy disables; the check-design-disclose law |
