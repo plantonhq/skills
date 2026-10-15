@@ -11,8 +11,8 @@ wants their infrastructure up.
 
 ```
 InfraChart (the template you compose)
-  → deploy: InfraStack (the chart rendered with the user's values — a
-    versioned record of exactly what was requested)
+  → deploy: InfraStack (the chart rendered with the user's values — the
+    record of exactly what was requested)
   → InfraPipeline (executes the stack's dependency graph in order)
   → each pipeline node = one InfraComponent (one manifest from the chart)
   → each node's deploy = an Infra Job (one IaC engine run for that component)
@@ -23,11 +23,36 @@ Practical implications worth sharing at the right moment:
 
 - Deploying a chart does not "run the chart" — it creates an Infra Stack, whose
   pipeline deploys component by component in dependency order. Independent
-  components run in parallel; a failed node stops its dependents only.
+  components run in parallel, at most four at once per run; a failed node
+  ends everything downstream of it ("Not run: <Kind>/<slug> failed") while
+  independent branches carry on.
+- Every change to a stack is a plan read first: what applying would do to
+  each resource (Create, Update, Destroy, Replace, Keep, Adopt, May Change,
+  Unchanged…), before anything runs. Applying records a numbered revision
+  and starts one run that applies what the stack declares, then removes
+  what it no longer declares — destroyed, or kept on its provider as chosen.
+- In a protected environment a change is a request: the engines preview it,
+  an approver approves exactly the plan they read, and nothing applies
+  before. Each resource proves its plan is the one previewed before it
+  changes; one that moved since stops and asks again
+  (`infra.deployed-stacks.md` has the request's commands).
+- A stack has one run at a time: an apply, undeploy, purge or rerun is
+  refused while a run of that stack is queued, running or waiting for
+  approval, and the refusal names the run or the waiting request. Relay it:
+  the user reviews and decides the request, withdraws it, or cancels the run
+  (`planton infra pipeline cancel <id>`), then retries.
+- Undeploy tears down everything the stack owns — including components its
+  templates no longer declare — dependents first, so a cluster outlives the
+  workloads on it. It is refused while any owned resource carries
+  `planton.dev/prevent-destroy: "true"`, or while another stack still reads
+  one of its resources (the refusal names that stack).
 - A failed pipeline is diagnosed node by node: find the failed node, read its
   Infra Job's error and logs (`craft.planton-cli.md` has the exact commands).
-- Redeploying after a chart fix creates a new pipeline run; already-green
-  resources converge (no duplicate infrastructure).
+- Applying a chart fix creates a new run; resources whose inputs did not
+  move run no job and read "Unchanged since <job>" (no duplicate
+  infrastructure). A resource the templates stop declaring is destroyed
+  only when its plan says Destroy and the person agreed — or kept running
+  on its provider when they chose Keep.
 
 ## Every resource deploys through an open-source module
 

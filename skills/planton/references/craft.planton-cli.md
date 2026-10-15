@@ -35,10 +35,20 @@ inline for one-off scoping.
 ## Grounding lookups (session start, before proposing architecture)
 
 ```
-planton chart list                        # charts in the catalog (org + official)
+planton chart list                        # charts in the catalog (org + official), each with its version
 planton infra stack list -o json        # the org's Infra Stacks (what has been deployed)
-planton infra stack get <id-or-name>    # one stack, full record
+planton infra stack get <id-or-name>    # one stack, full record (its declaration and live revision)
+planton infra stack history <name> --env <env>  # its revisions: every plan applied, newest first
+planton infra stack plan <name> --env <env>     # what applying would do now (writes nothing)
+planton infra stack review <name> --env <env>   # the request waiting in a protected environment (writes nothing)
+planton infra stack status <name>                # its environments in promotion order: what each runs, its
+                                                 # chart version, how far behind or ahead, what is moving in
+planton infra stack diff <name> --env <env> --against <env>   # two environments side by side, values first
+                                                 # (or --revision N --against-revision M); exit 1 = they differ
 planton env list                          # environments in the org
+planton service status <service>          # a service's environments in promotion order: the build each
+                                          # runs, rollout, distance ("3 commits behind dev"), runs in
+                                          # flight by number; -o json|yaml for the path itself
 planton search connections                # provider connections (which clouds/clusters)
 planton connection authorization list     # which connections which envs may use
 planton secret list -o json               # managed secrets ("env" field = scope)
@@ -73,6 +83,12 @@ confirmation, same as any other.
 with pull requests, refuse direct deletes, and never join promotion order —
 never propose architecture that depends on one. Their story lives in
 `references/service.preview-environments.md`.
+
+Moving a stack between its environments is a mutation, planned and shown
+like any apply, never run uninvited: `planton infra stack promote <name>
+--from <env> --to <env>`, `rollback <name> --env <env>` and `upgrade <name>
+--env <env>` (`references/infra.stack-promotion.md` has the flags, the CI
+flow and what to say first).
 
 Read `infra stack list` results with an eye on `env` — a stack in env
 `dev` means that chart's Infra Components exist in dev. Caveat: the list rides the search index, so a
@@ -119,6 +135,9 @@ planton infra pipeline status <infpipe_id>
 # 3. Why did the node fail? Engine logs, one hop:
 planton infra pipeline logs <infpipe_id>              # auto-targets the failed node
 planton infra pipeline logs <infpipe_id> --node <slug> # a specific node (slug from status)
+
+# 3b. A passing failure (a timeout, a quota)? Run it again, as it was reviewed:
+planton infra pipeline rerun <infpipe_id>              # same revision; asks when it destroys (--yes)
 
 # 4. Deeper: the Infra Job record carries the full error detail:
 planton infra job list <infra-component-id> -o json
@@ -274,6 +293,9 @@ backend. Authentication and partial-response failures are not empty history.
 ```
 planton follow <infpipe_id|ij_id> --plain   # auto-detects by id prefix
 planton infra pipeline stream-status <id>   # status lines until terminal
+planton service follow <service> <number>   # a service run by its handle ("Run #128"),
+                                            # or by its id; logs, rerun, cancel and both
+                                            # gate resolvers take the same two forms
 ```
 
 Streams block until the pipeline finishes — in a session, prefer polling

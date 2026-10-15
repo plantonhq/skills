@@ -34,8 +34,9 @@ classes -- live in "Rules that prevent whole failure classes" below.
   contents, and platform records change only on the user's explicit ask, one
   confirmation per mutation -- `references/cloud.exploration.md` governs both.
 - **Never approve a deployment gate, anywhere, for anyone.** Approval is a
-  human decision; the assistant holds no approval rights. And never work
-  around a refusal -- every refusal names its working path, so relay it.
+  human decision; you only carry out a stack request's decision the person
+  stated after reading its plan (`references/infra.deployed-stacks.md`).
+  Never work around a refusal -- every refusal names its path, so relay it.
 
 ## Choose the work
 
@@ -110,8 +111,8 @@ file-writing command on any surface:
   manifest; a wired set deploys as one (`planton apply -f <dir>`); a chart
   is for a parameterized architecture.
 - **`.planton/stack.yaml` -- the working copy of a DEPLOYED Infra Stack.**
-  Saving starts a real deployment pipeline; read
-  `references/infra.deployed-stacks.md` before doing anything.
+  Every change is a plan you show the user, then apply; applying starts a
+  real run; read `references/infra.deployed-stacks.md` before doing anything.
 - **No marker, `Chart.yaml` at the root -- the folder itself is the chart.**
 - **No marker, no `Chart.yaml` -- an APPLICATION REPOSITORY.** Infrastructure
   lives under `infrastructure/`; never a `.planton/` directory here.
@@ -249,8 +250,7 @@ the person's register as the work grows (`references/craft.personalization.md`).
    and an ordering relationship. Cluster elsewhere: no connection wiring
    at all. The build cannot catch connection mistakes either way.
 7. Make optional resources conditional with `{% if values.flag | bool %}`
-   ... `{% endif %}` around the whole document
-   (`references/infra.templating.md`).
+   ... `{% endif %}` around the whole document (`references/infra.templating.md`).
 8. Never delete or rename existing files while composing (the rules below
    say why: a deletion freezes the session for a human approval).
 
@@ -322,15 +322,15 @@ shared state and needs the user's explicit go-ahead:
   and compiled -- never fake the step with a different mutation.
 - Deploying the chart is offered, never performed as part of composition
   -- and on the user's EXPLICIT ask you perform it yourself
-  (`planton chart install`, one confirmation, then narrate the pipeline).
+  (`planton chart install`: plan, show, one confirmation, then narrate the run).
   The availability disclosure is a precondition of the deploy act
   (`references/catalog.availability.md`). On a signed-in instance whose
   machine carries a login for the chart's cloud, the offer takes its
   strongest form -- deploying from THIS machine
   (`references/infra.machine-deploy.md`: the probe, the grammar, the
   consent discipline).
-- **A working copy of a deployed Infra Stack is different**: there, the save
-  verb (`planton chart install`) IS the deploy -- consent-gated per save
+- **A working copy of a deployed Infra Stack is different**: every change
+  is planned, shown with every Destroy named, and applied on the user's yes
   (`references/infra.deployed-stacks.md`).
 
 ## Rules that prevent whole failure classes
@@ -428,8 +428,9 @@ Read the file whose "Read when" matches the moment; never answer from memory wha
 | `references/infra.issue-catalog.md` | A build failed and you need the fix pattern for an error |
 | `references/infra.deployment-model.md` | What happens after deploy (Infra Stacks, pipelines, Infra Jobs, IaC modules); explaining or diagnosing it |
 | `references/infra.machine-deploy.md` | Deployment is the next step on a signed-in instance; offering the machine's own cloud login as the deploy path; performing a consented deploy |
-| `references/infra.deployed-stacks.md` | The folder has `.planton/stack.yaml`; fixing a failed deployment; saving changes to a deployed Infra Stack |
-| `references/infra.state-import.md` | A deploy failed saying a resource ALREADY EXISTS; adopting an orphaned provider resource into IaC state |
+| `references/infra.deployed-stacks.md` | The folder has `.planton/stack.yaml`; fixing a failed deployment; planning and applying a change to a deployed Infra Stack; a stack's revisions |
+| `references/infra.stack-promotion.md` | A stack across its environments: is prod behind, which chart version each runs; promoting, rolling back, upgrading to a chart's newer version, comparing two environments or revisions |
+| `references/infra.state-import.md` | A deploy failed saying a resource ALREADY EXISTS; importing an orphaned provider resource into IaC state |
 | `references/infra.workspace-postures.md` | The folder-identity check's full choreography: workspaces, checkouts, loose manifests and SETS, the canvas rules, and the application-repository posture a coding agent works in |
 | `references/infra.worked-example.md` | The full shape of a small chart in one place; checking your layout against a known-good one |
 | `references/cloud.aws-architecture.md` | Choosing AWS service combinations; security and network defaults |
@@ -457,7 +458,7 @@ Read the file whose "Read when" matches the moment; never answer from memory wha
 | `references/service.managed-pipelines.md` | What a Planton-managed build runs: the platform tracks, the catalog tasks a repository pipeline reuses by plain name, the param contract and bindable workspaces, the `platform-content` pin, the compile verdicts, the images a build cluster pulls |
 | `references/service.pipeline-authoring.md` | Writing or changing a service's own pipeline: the files, Tasks beside the pipeline, name resolution, the param contract and the optional trigger facts with `when`, the validate loop, every compile verdict's fix, and what to edit when asked for a step, a release-only step, or a shared task |
 | `references/service.org-publishing.md` | Sharing a pipeline or a task across services: the `TektonPipeline`/`TektonTask` record shapes, the name law, publish order and the publish check, consuming by one line or a plain `taskRef`, what an update changes, the delete guards, listing what the organization published |
-| `references/service.delivery-verbs.md` | Deploying an image built anywhere, promoting between environments, rolling back, tag releases, feature-branch deploys, explaining a refused delivery |
+| `references/service.delivery-verbs.md` | Deploying an image built anywhere, promoting between environments, rolling back, tag releases, feature-branch deploys, explaining a refused delivery or an unchanged resource, `--reapply-all` |
 | `references/service.urls-and-rollout-verification.md` | Where a deployed service answers: URLs on the deployment record, reading the rollout verdict accurately |
 | `references/service.secret-backends.md` | Secrets should live in the person's own AWS Secrets Manager, Google Cloud Secret Manager or Azure Key Vault; where secrets live and what each place offers (hosted, Planton Desktop, self-hosted with the vault on or off: the default backend, platform vs local, ambient identity, keyless or not); how Planton signs in to that store (a cloud connection -- keyless stores nothing -- inline credentials, or ambient identity, refused on hosted); which connections can serve; where a new secret lands; the one-hop rule; moving a backend off a pasted key; a refused verify, create, connection delete or secret delete, or a self-hosted boot that can serve no backend, with every sentence and its remedy |
 | `references/service.pulling-private-images.md` | A pod in `ImagePullBackOff`, "do I need a pull secret", a run's pull sentence, a GHCR registry connected through a sign-in, or a Cloud Run / App Runner / Lambda target: the three ways a workload pulls, what the deploy fills from the registry connection and when it fills nothing, the GHCR pull token, the own-registry-only runtimes, the refusal and remedy sentences, previews and rotation, what never to suggest |
