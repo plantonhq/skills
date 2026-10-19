@@ -35,7 +35,7 @@ inline for one-off scoping.
 ## Grounding lookups (session start, before proposing architecture)
 
 ```
-planton chart list                        # charts in the catalog (org + official), each with its version
+planton chart list                        # charts in the catalog (org + platform), each with its version
 planton infra stack list -o json        # the org's Infra Stacks (what has been deployed)
 planton infra stack get <id-or-name> --env <env>  # one stack, full record (its declaration and live revision);
                                                  # a name needs --env, an id does not
@@ -441,6 +441,8 @@ planton secret get db-password --reveal -o plain   # same contract; so do env ge
 
 Branch on 3 for "not declared" (create it, or fall back) and treat 1 as a
 failure to reach or ask the instance -- never parse the banner's words.
+
+Not found also covers what you are not allowed to know about. A record in an organization you are not part of answers exactly like a record that does not exist: the same exit 3 and the same sentence, whether you named it by id or by organization and slug. So exit 3 against another organization never proves a name is free there; check the instance and organization first (`planton context get`). Inside an organization you belong to, a record you may not read is a refusal, not a miss: the Access Needed banner names the roles that could and who can grant them, and the command exits 1.
 
 ## On a self-hosted instance
 
