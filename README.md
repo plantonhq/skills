@@ -43,7 +43,7 @@ npx skills add plantonhq/skills --agent '*' -y
 The skill does its best work with the `planton` CLI on your PATH: validation and schema lookups run fully offline, and one `planton login` unlocks the compile loop, lookups, and deploys against your organization.
 
 ```bash
-brew install plantonhq/tap/planton   # macOS; other platforms: https://planton.ai/docs/cli
+curl -fsSL https://downloads.planton.ai/client-apps/planton/cli/install.sh -o /tmp/planton-install.sh && sh /tmp/planton-install.sh   # macOS and Linux; Homebrew and Windows: https://planton.ai/docs/cli
 planton login
 ```
 
