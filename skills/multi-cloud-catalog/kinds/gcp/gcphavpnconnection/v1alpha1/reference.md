@@ -458,6 +458,8 @@ Google's defaults (which already exclude broken algorithms). Immutable.
 
 Phase-1 (IKE SA) ciphers.
 
+- rule: phase-1 encryption that is all AES-GCM (AEAD) needs no separate integrity algorithm, and Google refuses one: leave integrity empty
+
 ### spec.tunnels[].cipherSuite.phase1.encryption
 
 `[]string`
@@ -468,7 +470,8 @@ Encryption algorithms.
 
 `[]string`
 
-Integrity algorithms.
+Integrity algorithms. Leave empty when every encryption algorithm is
+AES-GCM (AEAD).
 
 ### spec.tunnels[].cipherSuite.phase1.prf
 
@@ -578,10 +581,10 @@ ASN. Any public or private ASN. Required. Mutable.
 `string` · optional (explicit presence)
 
 The peer's address on the tunnel: the other usable address of
-interface_ip_range (e.g. "169.254.10.2" for 169.254.10.1/30). Google
-derives it from the interface range when empty, so it is normally left
-unset; set it only when the device insists on a specific address.
-Sent only when set. Immutable.
+interface_ip_range (e.g. "169.254.10.2" for 169.254.10.1/30). Left unset,
+the modules send exactly that address: Google refuses an IPv4 session
+whose peer address is missing. Set it only when the device insists on a
+specific address. Immutable.
 
 - rule: peer_ip_address must be an IPv4 address
 
