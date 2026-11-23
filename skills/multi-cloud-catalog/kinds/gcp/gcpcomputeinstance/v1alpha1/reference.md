@@ -485,8 +485,10 @@ the provider then compares authoritatively with replace-on-change
 semantics — a partial list plans a VM REPLACEMENT on every re-apply
 (live-verified: debian-12's ["UEFI_COMPATIBLE", "GVNIC"] echoed back
 ["UEFI_COMPATIBLE", "VIRTIO_SCSI_MULTIQUEUE", "GVNIC", "SEV_CAPABLE",
-"SEV_LIVE_MIGRATABLE_V2"]). Leave unset to follow the image's own
-features cleanly.
+"SEV_LIVE_MIGRATABLE_V2"]). An image family's feature set also grows
+between releases (debian-12 has since added "SUSPEND_SAFE_FPR"), so a
+complete list must follow every image change. Leave unset to follow the
+image's own features cleanly.
 
 ### spec.bootDisk.replicaZones
 
@@ -1098,7 +1100,8 @@ failed and starting host-error recovery (restart or termination per
 automatic_restart). A lower value recovers faster from a hung host at
 the cost of more false positives; leave unset for Compute Engine's
 default recovery timing. Must be 90..330 in steps of 30 (90, 120, ...,
-330).
+330). Compute Engine refuses it on a Spot VM ("hostErrorTimeoutSeconds
+feature is not supported for preemptible instance").
 
 - rule: host_error_timeout_seconds must be a multiple of 30 between 90 and 330
 - rule: {"int32":{"lte":330,"gte":90}}
@@ -1219,10 +1222,11 @@ frequency (supported machine families only).
 
 GPU accelerator cards attached to the instance. Requires a
 GPU-capable zone and on_host_maintenance = "TERMINATE". Each entry
-attaches at least one card (count >= 1). Removing every entry from an
-existing VM leaves its GPUs attached (the provider preserves the
-current accelerators when the block is absent); detaching GPUs
-replaces the VM, so plan it as a recreate rather than an edit.
+attaches at least one card (count >= 1). Any change to this list on
+an existing VM (a type, a count, an added or removed entry) replaces
+the VM, so plan it as a recreate rather than an edit. Removing every
+entry is the exception: the provider preserves the current
+accelerators when the block is absent, so the GPUs stay attached.
 
 ### spec.guestAccelerators[].type
 
@@ -1493,6 +1497,7 @@ Immutable.
 
 ## Validation Rules
 
+- `spot_takes_no_host_error_timeout`: Compute Engine refuses scheduling.host_error_timeout_seconds on a Spot VM — remove it, or use the STANDARD provisioning model
 - `reclaimable_models_require_no_automatic_restart`: SPOT and FLEX_START VMs cannot automatically restart after reclamation — leave scheduling.automatic_restart unset or set it to false
 - `termination_action_requires_reclaimable_or_timed_vm`: scheduling.instance_termination_action applies to SPOT/FLEX_START VMs and to timed-run VMs (max_run_duration_seconds or termination_time) — configure one of those or remove the termination action
 - `flex_start_requires_max_run_duration`: FLEX_START VMs must bound their runtime — set scheduling.max_run_duration_seconds
@@ -1546,6 +1551,7 @@ Fields on other kinds that can point at this resource:
 | Kind | Field | Reads |
 |---|---|---|
 | GcpNetworkEndpointGroup | `spec.endpoints[].instance` | `status.outputs.instance_name` |
+| GcpNetworkEndpointGroup | `spec.endpoints[].ipAddress` | `status.outputs.internal_ip` |
 
 ## See Also
 

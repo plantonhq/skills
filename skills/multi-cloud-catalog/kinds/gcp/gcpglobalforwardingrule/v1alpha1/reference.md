@@ -98,9 +98,9 @@ spec:
 | `spec.forwardingRuleName` | `string` |  |  |  |
 | `spec.description` | `string` |  |  |  |
 | `spec.region` | `string` |  |  |  |
-| `spec.target` | `string \| valueFrom` |  |  | GcpTargetHttpsProxy (`status.outputs.self_link`), GcpTargetHttpProxy (`status.outputs.self_link`), GcpPscServiceAttachment (`status.outputs.self_link`) |
+| `spec.target` | `string \| valueFrom` |  |  | GcpTargetHttpsProxy (`status.outputs.self_link`), GcpTargetHttpProxy (`status.outputs.self_link`), GcpPscServiceAttachment (`status.outputs.self_link`), GcpRedisCluster (`status.outputs.discovery_service_attachment`), GcpRedisCluster (`status.outputs.primary_service_attachment`), GcpRedisCluster (`status.outputs.reader_service_attachment`) |
 | `spec.backendService` | `string \| valueFrom` |  |  | GcpBackendService (`status.outputs.self_link`) |
-| `spec.ipAddress` | `string \| valueFrom` |  |  | GcpGlobalAddress (`status.outputs.address`), GcpAddress (`status.outputs.address`) |
+| `spec.ipAddress` | `string \| valueFrom` |  |  | GcpGlobalAddress (`status.outputs.address`), GcpGlobalAddress (`status.outputs.self_link`), GcpAddress (`status.outputs.address`), GcpAddress (`status.outputs.self_link`) |
 | `spec.ipProtocol` | `string` |  | `TCP` |  |
 | `spec.ipVersion` | `string` |  |  |  |
 | `spec.loadBalancingScheme` | `string` |  | `EXTERNAL` |  |
@@ -207,14 +207,17 @@ targets (target SSL/TCP proxies, target gRPC proxies, target instances,
 target pools) attach by self-link until they exist as Planton kinds. For
 Private Service Connect, pass the literal bundle name "all-apis" or
 "vpc-sc" (Google APIs, global rule), or reference the producer's
-GcpPscServiceAttachment (regional rule, in the attachment's region). All
-three kinds are declared candidates, so their self_link output fills in.
+GcpPscServiceAttachment (regional rule, in the attachment's region), or
+a GcpRedisCluster's discovery, primary or reader service attachment (a
+consumer endpoint a GcpRedisClusterEndpointSet registers; scheme NONE,
+in the cluster's region). Each is a declared candidate, so its output
+fills in.
 Exactly one of target and backend_service is set: a passthrough Network
 Load Balancer has no proxy and names its backend service instead.
 Mutable: GCP repoints it in place (a dedicated setTarget call), enabling
 zero-downtime frontend swaps.
 
-- references: GcpTargetHttpsProxy (`status.outputs.self_link`), GcpTargetHttpProxy (`status.outputs.self_link`), GcpPscServiceAttachment (`status.outputs.self_link`)
+- references: GcpTargetHttpsProxy (`status.outputs.self_link`), GcpTargetHttpProxy (`status.outputs.self_link`), GcpPscServiceAttachment (`status.outputs.self_link`), GcpRedisCluster (`status.outputs.discovery_service_attachment`), GcpRedisCluster (`status.outputs.primary_service_attachment`), GcpRedisCluster (`status.outputs.reader_service_attachment`)
 - rule: write as {value: <literal>} or {valueFrom: {kind: GcpTargetHttpsProxy, name: <that resource's name>, fieldPath: status.outputs.self_link}} -- a bare string does not parse
 
 ### spec.backendService
@@ -237,17 +240,22 @@ balancers and rejects it for every proxy-based one. Immutable.
 
 `string | valueFrom`
 
-The IP address this rule accepts traffic on. Reference a
-GcpGlobalAddress (the default kind, for a global rule) or a regional
-GcpAddress in the rule's region (for a regional rule) — both are
-declared candidates, so their address output fills in — or provide a
-literal IP ("34.120.1.2") or an address resource URL. When omitted,
-Google Cloud assigns an ephemeral IP — fine for testing, but production
-frontends should reserve a static address so DNS never has to chase a
-new VIP. Required for Private Service Connect rules to Google APIs.
-Immutable.
+The IP address this rule accepts traffic on: a GcpGlobalAddress (the
+default kind, for a global rule) or a regional GcpAddress in the rule's
+region (for a regional rule), or a literal IP ("34.120.1.2") or address
+resource URL. A reference names one of two outputs of either kind:
+status.outputs.address (the IP number) or status.outputs.self_link (the
+address resource) -- Google accepts both forms for an ordinary rule, and
+reads the IP number back either way. A Private Service Connect rule to
+a service attachment takes the address resource, never the number:
+Google refuses an IP there ("Invalid value for field
+'resource.IPAddress' ... The URL is malformed"), so reference the
+GcpAddress's self_link. When omitted, Google Cloud assigns an ephemeral
+IP -- fine for testing, but production frontends should reserve a
+static address so DNS never has to chase a new VIP. Required for
+Private Service Connect rules to Google APIs. Immutable.
 
-- references: GcpGlobalAddress (`status.outputs.address`), GcpAddress (`status.outputs.address`)
+- references: GcpGlobalAddress (`status.outputs.address`), GcpGlobalAddress (`status.outputs.self_link`), GcpAddress (`status.outputs.address`), GcpAddress (`status.outputs.self_link`)
 - rule: write as {value: <literal>} or {valueFrom: {kind: GcpGlobalAddress, name: <that resource's name>, fieldPath: status.outputs.address}} -- a bare string does not parse
 
 ### spec.ipProtocol
@@ -255,7 +263,10 @@ Immutable.
 `string` · optional (explicit presence)
 
 The IP protocol this rule matches (default TCP). All proxy-based load
-balancers and Private Service Connect use TCP; UDP, ESP, AH, SCTP, and
+balancers and Private Service Connect to Google APIs use TCP; a Private
+Service Connect rule to a service attachment carries no protocol (Google
+refuses one there, so the modules send none, the default included).
+UDP, ESP, AH, SCTP, and
 ICMP exist for passthrough load balancing and protocol forwarding.
 L3_DEFAULT — regional rules only — forwards every IP protocol at once
 (the passthrough Network Load Balancer's multi-protocol form); it
@@ -638,9 +649,14 @@ Fields that can point at another resource's outputs:
 | `spec.target` | GcpTargetHttpsProxy | `status.outputs.self_link` |
 | `spec.target` | GcpTargetHttpProxy | `status.outputs.self_link` |
 | `spec.target` | GcpPscServiceAttachment | `status.outputs.self_link` |
+| `spec.target` | GcpRedisCluster | `status.outputs.discovery_service_attachment` |
+| `spec.target` | GcpRedisCluster | `status.outputs.primary_service_attachment` |
+| `spec.target` | GcpRedisCluster | `status.outputs.reader_service_attachment` |
 | `spec.backendService` | GcpBackendService | `status.outputs.self_link` |
 | `spec.ipAddress` | GcpGlobalAddress | `status.outputs.address` |
+| `spec.ipAddress` | GcpGlobalAddress | `status.outputs.self_link` |
 | `spec.ipAddress` | GcpAddress | `status.outputs.address` |
+| `spec.ipAddress` | GcpAddress | `status.outputs.self_link` |
 | `spec.network` | GcpVpcNetwork | `status.outputs.network_self_link` |
 | `spec.subnetwork` | GcpSubnetwork | `status.outputs.subnetwork_self_link` |
 

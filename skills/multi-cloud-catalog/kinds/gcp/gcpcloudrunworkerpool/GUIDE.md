@@ -33,11 +33,27 @@ public traffic that way too).
 A service scales with traffic; a worker pool has none. `MANUAL`
 (Google's default) runs exactly `manualInstanceCount` instances --
 including `0`, which parks the pool without deleting it, the cheapest
-way to pause a worker. `AUTOMATIC` moves the count between
-`minInstanceCount` and `maxInstanceCount` on a signal you supply, for
-example a queue-depth metric wired through Cloud Monitoring. Because
-CPU is always allocated on a worker pool, an idle instance bills like a
-busy one: size the count for the work, and park what is not needed.
+way to pause a worker. A `MANUAL` block must state the count: the
+provider sends a missing count as `0`, so a forgotten count would park
+the pool, and the spec refuses it. Because CPU is always allocated on
+a worker pool, an idle instance bills like a busy one: size the count for
+the work, and park what is not needed. To follow a queue, change the
+count from whatever watches the queue's depth.
+
+## AUTOMATIC is refused
+
+Google also offers `AUTOMATIC`: Cloud Run moves the count between
+`minInstanceCount` (the floor, which is the committed spend) and
+`maxInstanceCount` (the ceiling, the cost circuit breaker) on a signal
+you drive -- Cloud Run never watches a queue on its own, so the signal
+is yours to build, for example a queue-depth metric wired through Cloud
+Monitoring. Neither engine can create such a pool: the Google provider
+sends a manual instance count with every scaling block (`0` when
+unset), and Cloud Run refuses any manual count under `AUTOMATIC`
+("scaling mode must be set to MANUAL"). So the spec refuses `AUTOMATIC`
+before anything deploys. The bounds stay in the spec because Google's
+API has them; they become usable the day the provider sends the manual
+count only in `MANUAL` mode.
 
 ## Where a worker's secrets live
 
@@ -83,6 +99,17 @@ them (re-evaluated at pulumi-gcp v10 GA).
 `deletionProtection` defaults to true: a destroy fails until the manifest
 flips it, and both engines send the value explicitly. `deletionPolicy:
 PREVENT` is a second, independent guard; `ABANDON` walks away from a
-running (and billing) pool. `region`, `workerPoolName`, and a container's
+running (and billing) pool. ABANDON keeps the pool only: the secrets this
+component stores for `secretValue`, their versions, and the identity's grant
+on them are deleted on both engines, so the abandoned pool's next instance
+start can no longer read them. A pool meant to outlive its manifest takes its
+secrets through `valueFromSecret`, from a Secret Manager secret you own. `region`, `workerPoolName`, and a container's
 `dependsOn` are the only immutables -- everything else rolls a new
 revision in place.
+
+A pool with direct VPC egress leaves a Cloud Run-owned address
+(`serverless-ipv4-cloudrun-*`) in its subnet after it is deleted, and
+nobody but Cloud Run can release it. Cloud Run did after about two hours
+(1h49m, measured). Until then the subnet, and the network around it, can't
+be deleted, so tear a stack down knowing its network goes last, or give
+the network a teardown that retries for that long.

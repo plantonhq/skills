@@ -17,6 +17,10 @@ Either way the private key stays with its owner.
 
 Everything is immutable, so renewing means issuing a successor: declare a new certificate (a new ID) while the old one is still valid, move the workload, then remove the old one -- which revokes it. Destroying a certificate always revokes it; Google keeps the revoked record for the CRL, and the ID cannot be reused in the pool.
 
+## The audit trail
+
+Certificate Authority Service writes no Admin Activity audit entry when a certificate is issued, updated or revoked, while every pool, authority and template change has one. A project that needs a record of who issued or revoked which certificate turns on Data Access audit logging (`DATA_WRITE`) for `privateca.googleapis.com` in the project's or organization's audit config, which is off by default, and confirms the entries arrive before relying on them.
+
 ## Lifetimes
 
 The effective lifetime is the shortest of `lifetime`, the pool's and template's maximums, and what remains of the signing authority's own certificate. Plan subordinate rotation so leaves are never cut short unexpectedly.

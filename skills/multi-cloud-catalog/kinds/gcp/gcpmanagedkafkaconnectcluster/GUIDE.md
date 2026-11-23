@@ -4,7 +4,7 @@ The judgment this guide protects: a Connect cluster is shared compute for many t
 
 ## Attachment
 
-`kafkaCluster` names the Managed Kafka cluster the workers belong to -- where Kafka Connect keeps its internal config, offset, and status topics, and the default cluster connectors read and write. A reference to a `GcpManagedKafkaCluster` yields its full path; a literal must be that path. Attaching needs `managedkafka.clusters.attachConnectCluster` on the Kafka cluster.
+`kafkaCluster` names the Managed Kafka cluster the workers belong to -- where Kafka Connect keeps its internal config, offset, and status topics, and the default cluster connectors read and write. A reference to a `GcpManagedKafkaCluster` yields its full path; a literal must be that path. Google fixes the attachment at creation, so changing `kafkaCluster` replaces the Connect cluster: the connectors on it are deleted with the old one, and their blocks create them again on their next apply. Attaching needs `managedkafka.clusters.attachConnectCluster` on the Kafka cluster.
 
 ## Capacity
 
@@ -12,7 +12,7 @@ The judgment this guide protects: a Connect cluster is shared compute for many t
 
 ## Networks and DNS
 
-Each `networkConfigs` entry gives the workers a Private Service Connect interface in a private subnet of the Connect cluster's region, and through it they reach the Kafka cluster and any endpoint in that network. `dnsDomainNames` makes other private DNS domains resolvable -- MirrorMaker 2 replicating from a second Managed Kafka cluster needs that cluster's domain (its bootstrap address without the leading `bootstrap.` label and the port).
+Each `networkConfigs` entry gives the workers a Private Service Connect interface in a private subnet of the Connect cluster's region, and through it they reach the Kafka cluster and any endpoint in that network. `dnsDomainNames` makes other private DNS domains resolvable -- MirrorMaker 2 replicating from a second Managed Kafka cluster needs that cluster's domain (its bootstrap address without the leading `bootstrap.` label and the port). Deleting the Connect cluster leaves behind the network attachment Google made for those interfaces (named `connect-na-...`), with no endpoints left, and the subnet refuses deletion while it exists -- measured still holding the subnet more than 25 minutes after the Connect cluster was gone. Delete the attachment (`gcloud compute network-attachments delete`) before tearing down the subnet.
 
 ## Identity
 

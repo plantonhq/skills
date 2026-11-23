@@ -8,7 +8,7 @@ Put what is true of every certificate from a pool in the pool's baseline values;
 
 ## Identities
 
-`identityConstraints` decides what a request may say about itself. Turn off `allowSubjectPassthrough` when the subject should come from the template or not at all, and keep `allowSubjectAltNamesPassthrough` on with a CEL expression that pins the names -- for example `subject_alt_names.all(san, san.type == URI && san.value.startsWith("spiffe://example.org/"))` for workload identities.
+`identityConstraints` decides what a request may say about itself. Turn off `allowSubjectPassthrough` when a requested subject should be dropped: the template sets no subject, so the certificate then carries none and its subject alternative names are its whole identity. Keep `allowSubjectAltNamesPassthrough` on with a CEL expression that pins the names -- for example `subject_alt_names.all(san, san.type == URI && san.value.startsWith("spiffe://example.org/"))` for workload identities.
 
 ## CA options, carefully
 
@@ -17,3 +17,7 @@ Put what is true of every certificate from a pool in the pool's baseline values;
 ## Access
 
 Using a template needs `privateca.templateUser` on it -- grant it to the teams or workloads that issue with it, and keep the template in the project that owns the PKI.
+
+## IDs are used once
+
+A deleted template's ID is never usable again in its project and location ("Previously used CertificateTemplate ids may not be reused"), so a template recreated by a pipeline needs a new ID each time.

@@ -4,11 +4,11 @@ The judgment this guide protects: a persistent resource trades money for readine
 
 ## When a persistent resource pays off
 
-Vertex AI custom training provisions machines per job, which takes minutes and can fail when accelerators are scarce. A persistent resource provisions the machines once and keeps them: jobs that name its id in `persistent_resource_id` start in seconds on machines already running, and GPUs or TPUs stay held between jobs. Ray on Vertex AI clusters are persistent resources too. If jobs are rare and a few minutes of startup do not matter, on-demand training is cheaper.
+Vertex AI custom training provisions machines per job, which takes minutes and can fail when accelerators are scarce. A persistent resource provisions the machines once and keeps them: jobs that name its id in `persistent_resource_id` start in seconds on machines already running, and GPUs or TPUs stay held between jobs. Ray on Vertex AI clusters are persistent resources too, but neither provider carries their Ray settings, so this kind keeps machines for custom training jobs only. If jobs are rare and a few minutes of startup do not matter, on-demand training is cheaper.
 
 ## Pools
 
-Each `resourcePools[]` entry is a set of identical machines: `machineSpec` (a custom-training machine type and, optionally, an accelerator type and count Google pairs with it), a `replicaCount`, optional `autoscalingSpec` bounds (the floor must be at least 1 on a persistent resource), and optional boot disk settings. A pool's `id` is what a job's worker pool refers to; Google generates one when you leave it empty. Counts are whole numbers in the spec and travel to Google as decimal strings. Only `replicaCount` changes in place -- the machine, the disk, the autoscaling bounds, and the id are fixed.
+Each `resourcePools[]` entry is a set of identical machines: `machineSpec` (a custom-training machine type and, optionally, an accelerator type and count Google pairs with it), a `replicaCount`, optional `autoscalingSpec` bounds (the floor must be at least 1 on a persistent resource), and optional boot disk settings. A pool's `id` is what a job's worker pool refers to; Google generates one when you leave it empty. Counts are whole numbers in the spec and travel to Google as decimal strings. Every setting is fixed once created: a change to any of them, `replicaCount` and the display name included, replaces the resource and reprovisions its machines (Google would patch the count, but the provider sends that update as a PUT Google does not serve, so the modules replace instead).
 
 ## Networking is decided once
 

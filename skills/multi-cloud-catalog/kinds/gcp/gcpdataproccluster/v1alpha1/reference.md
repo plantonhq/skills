@@ -629,7 +629,9 @@ Confidential Compute technology for all cluster nodes:
   "SEV_SNP" -- AMD SEV with Secure Nested Paging: adds integrity
                protection and attestation (N2D)
   "TDX"     -- Intel Trust Domain Extensions (C3)
-The machine type must support the chosen technology. Immutable.
+The machine type must support the chosen technology. Unset, with
+enable_confidential_compute unset too, the nodes are ordinary VMs.
+Immutable.
 
 - rule: confidential_instance_type must be SEV, SEV_SNP, or TDX
 
@@ -679,7 +681,8 @@ Boot disk and local SSD configuration.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -718,7 +721,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -728,7 +732,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -747,7 +752,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -755,18 +761,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.masterConfig.diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -775,7 +784,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -808,7 +818,8 @@ Number of accelerators to attach. Must be at least 1.
 `string`
 
 Minimum CPU platform for the instances (e.g., "Intel Cascade Lake").
-Forces nodes onto a specific or newer CPU generation.
+Forces nodes onto a specific or newer CPU generation. Unset: any CPU
+platform the machine type runs on in the zone.
 
 ### spec.clusterConfig.masterConfig.imageUri
 
@@ -869,7 +880,8 @@ disk_config. Immutable.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -908,7 +920,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -918,7 +931,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -937,7 +951,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -945,18 +960,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.masterConfig.instanceFlexibilityPolicy.instanceSelectionList[].diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -965,7 +983,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1033,7 +1052,8 @@ Boot disk and local SSD configuration.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -1072,7 +1092,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1082,7 +1103,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1101,7 +1123,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -1109,18 +1132,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.workerConfig.diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1129,7 +1155,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1162,6 +1189,7 @@ Number of accelerators to attach. Must be at least 1.
 `string`
 
 Minimum CPU platform for the instances.
+Unset: any CPU platform the machine type runs on in the zone.
 
 ### spec.clusterConfig.workerConfig.imageUri
 
@@ -1228,7 +1256,8 @@ disk_config. Immutable.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -1267,7 +1296,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1277,7 +1307,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1296,7 +1327,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -1304,18 +1336,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.workerConfig.instanceFlexibilityPolicy.instanceSelectionList[].diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1324,7 +1359,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1393,7 +1429,8 @@ config unless an instance_flexibility_policy overrides it.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -1432,7 +1469,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1442,7 +1480,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1461,7 +1500,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -1469,18 +1509,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.secondaryWorkerConfig.diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1489,7 +1532,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1540,7 +1584,8 @@ disk_config. Immutable.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -1579,7 +1624,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1589,7 +1635,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1608,7 +1655,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -1616,18 +1664,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.secondaryWorkerConfig.instanceFlexibilityPolicy.instanceSelectionList[].diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -1636,7 +1687,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -2023,6 +2075,7 @@ Compute Engine machine type for the group's instances.
 `string`
 
 Minimum CPU platform for the group's instances.
+Unset: any CPU platform the machine type runs on in the zone.
 
 ### spec.clusterConfig.auxiliaryNodeGroups[].nodeGroupConfig.diskConfig
 
@@ -2035,7 +2088,8 @@ Boot disk and local SSD configuration.
 `int32`
 
 Size of the boot disk in GB. Minimum 10 GB.
-If not specified, GCP defaults to 500 GB for master and worker nodes.
+If not specified, Dataproc uses 500 GB for every node role: masters,
+workers and secondary workers.
 
 - rule: boot_disk_size_gb must be at least 10
 
@@ -2074,7 +2128,8 @@ images do).
 
 Provisioned I/O operations per second for the boot disk — the IOPS
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -2084,7 +2139,8 @@ provisioned performance (hyperdisks).
 
 Provisioned throughput in MB/s for the boot disk — the bandwidth
 dial decoupled from disk size, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (Dataproc takes it only on hyperdisk-balanced).
+Unset: Compute Engine's default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -2103,7 +2159,8 @@ auxiliary (driver) node groups.
 
 `int32`
 
-Size of the disk in GB. Leave unset for the API's default size.
+Size of the disk in GB. Leave unset for the API's default size;
+Dataproc's reference names no number for it.
 
 - rule: disk_size_gb must be at least 10
 
@@ -2111,18 +2168,21 @@ Size of the disk in GB. Leave unset for the API's default size.
 
 `string`
 
-Disk type: "pd-standard", "pd-ssd", "pd-balanced", or
-"hyperdisk-balanced" (the class whose provisioned IOPS/throughput
-dials apply). Leave empty for the API's default.
+Disk type. Dataproc attaches only Hyperdisks: "HYPERDISK_BALANCED",
+"HYPERDISK_EXTREME", "HYPERDISK_ML", or "HYPERDISK_THROUGHPUT" (Google
+refuses persistent-disk types such as pd-standard). Hyperdisks need a
+machine series that supports them (N4, C3, C4 and newer; not E2). Leave
+empty for the API's default.
 
-- rule: disk_type must be pd-standard, pd-ssd, pd-balanced, or hyperdisk-balanced
+- rule: Dataproc attaches only Hyperdisks: disk_type must be HYPERDISK_BALANCED, HYPERDISK_EXTREME, HYPERDISK_ML, or HYPERDISK_THROUGHPUT
 
 ### spec.clusterConfig.auxiliaryNodeGroups[].nodeGroupConfig.diskConfig.attachedDisks[].provisionedIops
 
 `int64` · optional (explicit presence)
 
 Provisioned I/O operations per second, honored by disk types that
-support provisioned performance (hyperdisks).
+support provisioned performance (hyperdisks). Unset: Compute Engine's
+default for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -2131,7 +2191,8 @@ support provisioned performance (hyperdisks).
 `int64` · optional (explicit presence)
 
 Provisioned throughput in MB/s, honored by disk types that support
-provisioned performance (hyperdisks).
+provisioned performance (hyperdisks). Unset: Compute Engine's default
+for the disk's type and size.
 
 - rule: {"int64":{"gte":"1"}}
 
@@ -2185,7 +2246,8 @@ on demand. Immutable after creation.
 
 The execution engine. DEFAULT runs open-source Spark as-is;
 LIGHTNING enables the Lightning Engine (Google's accelerated Spark
-runtime, premium tier). Immutable after creation.
+runtime, premium tier). Unset works the same as DEFAULT. Immutable
+after creation.
 
 - rule: engine must be DEFAULT or LIGHTNING
 
@@ -2338,6 +2400,7 @@ Number of local SSDs attached to each node.
 `string`
 
 Minimum CPU platform for the pool's nodes.
+Unset: any CPU platform the machine type runs on in the zone.
 
 ### spec.virtualClusterConfig.kubernetesClusterConfig.gkeClusterConfig.nodePoolTarget[].nodePoolConfig.preemptible
 
@@ -2403,6 +2466,7 @@ write its full name. Required.
 `GcpDataprocClusterSparkHistoryServerConfig`
 
 Persistent Spark History Server hosted on another Dataproc cluster.
+Unset: none, so job history lives and dies with this cluster.
 
 ### spec.virtualClusterConfig.auxiliaryServicesConfig.sparkHistoryServerConfig.dataprocCluster
 

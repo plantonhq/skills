@@ -6,11 +6,16 @@ The judgment this guide protects: an issuance config is shared policy, not a per
 
 1. A `GcpPrivateCaPool`.
 2. An enabled `GcpPrivateCaCertificateAuthority` in that pool.
-3. The Certificate Manager service agent, `service-<project_number>@gcp-sa-certificatemanager.iam.gserviceaccount.com`, created and granted `roles/privateca.certificateRequester` on the pool. Google does not create this agent when the API is turned on: create it first (`gcloud beta services identity create --service=certificatemanager.googleapis.com --project=<project>`), or the grant is refused as an invalid member.
-4. This config, `caPool` from the pool's `name` output.
-5. `GcpCertManagerCert` resources whose `managed.issuance_config` references this config's `issuance_config_id`.
+3. This config, `caPool` from the pool's `name` output.
+4. `GcpCertManagerCert` resources whose `managed.issuance_config` references this config's `issuance_config_id`.
 
-Google checks step 3 when the config is created: without the agent's grant on the pool, the create fails with "Config validation failed" (measured on both engines). No catalog kind creates the agent or grants on a CA pool yet; do both outside the catalog, once per project and pool, before creating the config.
+## The service agent and its grant
+
+Google requires the Certificate Manager service agent, `service-<project_number>@gcp-sa-certificatemanager.iam.gserviceaccount.com`, to hold `roles/privateca.certificateRequester` on the pool when the config is created; without it the create fails with "Config validation failed" (measured on both engines). Google creates that agent only on request, never when the API is turned on, and a grant naming it before then is refused as an invalid member.
+
+This block does both, in order: it creates the agent in the config's project, grants it the requester role on the pool (named by its full resource name), and then creates the config. The deploying identity therefore needs `privateca.caPools.getIamPolicy` and `setIamPolicy` on the pool, beside the Certificate Manager permissions. It also needs `privateca.caPools.use` on the pool: Certificate Manager checks that the creator itself may issue from it, and a creator without it gets the same bare "Config validation failed", with no permission named. The agent outlives the config; destroy never removes it.
+
+The grant is a member grant, not counted per config. Two issuance configs over one pool share the one binding: destroying either removes it, and the other's certificates stop renewing until the other config is applied again. Keep pool and configs in one stack, or re-apply the survivor after removing one.
 
 ## Choosing the policy
 
@@ -18,9 +23,9 @@ Google checks step 3 when the config is created: without the agent's grant on th
 - **Lifetime** — 21 to 30 days. Renewal is automatic, so the only cost of a shorter lifetime is more issuance from the pool.
 - **Rotation window** — Google renews when this percentage of the lifetime has passed, and demands at least 7 days on each side. With 30 days the range is 24–76; with 21 days it is 34–66. Validation computes the rule for any lifetime, so an out-of-range window is refused before deploy.
 
-## Everything but labels replaces
+## Every change replaces
 
-The pool, key algorithm, lifetime, window, and location are all immutable. A change creates a new config, and certificates still naming the old one keep serving until their own renewal. To change policy for live certificates, create a second config, point the certificates at it, then remove the first.
+The pool, key algorithm, lifetime, window, and location are all immutable, and so are the labels: both providers delete and re-create the config for any change, a label from the manifest's metadata included (measured on both engines). A change creates a new config, and certificates still naming the old one keep serving until their own renewal. To change policy for live certificates, create a second config, point the certificates at it, then remove the first.
 
 ## Conventions and gotchas
 

@@ -16,11 +16,12 @@ GcpColabRuntime / GcpColabSchedule names it) and get a runtime that
 already meets the team's rules: the right machine and GPU, a private
 network, customer-managed encryption, idle shutdown to cap spend.
 
-Immutable: location, runtime_template_id, description, labels (a label
-change REPLACES the template -- Google fixes a template's labels at
-creation), network_tags, and every machine, disk, network, idle,
-end-user-credential, and Shielded VM setting. Mutable in place:
-display_name, kms_key_name, and software_config.
+Replaced on change: location, runtime_template_id, description, labels
+(Google fixes a template's labels at creation), network_tags, and every
+machine, disk, and network setting. Fixed at creation, and never
+changed by a deploy: idle_timeout, euc_disabled, and enable_secure_boot
+(see each field) -- a different value needs a new template. Mutable in
+place: display_name, kms_key_name, and software_config.
 
 ## Example
 
@@ -67,7 +68,7 @@ spec:
 | `spec.dataPersistentDiskSpec` | `GcpColabRuntimeTemplateDataPersistentDiskSpec` |  |  |  |
 | `spec.dataPersistentDiskSpec.diskType` | `string` |  |  |  |
 | `spec.dataPersistentDiskSpec.diskSizeGb` | `int64` |  |  |  |
-| `spec.networkSpec` | `GcpColabRuntimeTemplateNetworkSpec` |  |  |  |
+| `spec.networkSpec` | `GcpColabRuntimeTemplateNetworkSpec` | yes |  |  |
 | `spec.networkSpec.enableInternetAccess` | `bool` |  |  |  |
 | `spec.networkSpec.network` | `string \| valueFrom` |  |  | GcpVpcNetwork (`status.outputs.network_id`) |
 | `spec.networkSpec.subnetwork` | `string \| valueFrom` |  |  | GcpSubnetwork (`status.outputs.subnetwork_self_link`) |
@@ -106,7 +107,9 @@ used.
 `string` · required
 
 The Colab Enterprise region, e.g. "us-central1". Runtimes created from
-the template run here. Changing it needs a new template.
+the template run here. Changing it replaces the template: both modules
+force the replacement, since Google's provider would otherwise try to
+move it in place.
 
 - rule: {"required":true,"string":{"pattern":"^[a-z]+-[a-z]+[0-9]+$"}}
 
@@ -139,8 +142,11 @@ Immutable.
 
 `map<string, string>`
 
-Labels on the template. The platform attribution labels are merged in
-and win on key conflicts. A label change replaces the template.
+Labels on the template. The platform attribution labels (the
+organization and environment among them) are merged in and win on key
+conflicts. A label change replaces the template -- moving the resource
+to another environment changes its attribution labels, so it replaces
+the template too.
 
 ### spec.machineSpec
 
@@ -201,25 +207,33 @@ Disk size in GB, 10 to 65536. Needs disk_type.
 
 ### spec.networkSpec
 
-`GcpColabRuntimeTemplateNetworkSpec`
+`GcpColabRuntimeTemplateNetworkSpec` · required
 
-The network the runtime joins. Omit for Google's default network with
-internet access.
+The network the runtime joins. Required: a template that sends no
+network spec has no internet access, and Google then refuses it unless
+it names both a network and a subnetwork ("Both [networkSpec.network]
+and [networkSpec.subnetwork] fields must be provided if Internet Access
+is disabled"). Turn internet access on, or name both.
+
+- rule: {"required":true}
+- rule: a network_spec without internet access must name both a network and a subnetwork: Google refuses a private template that leaves either out
 
 ### spec.networkSpec.enableInternetAccess
 
 `bool`
 
 Give runtimes a public internet path. Turn off for runtimes that must
-stay private; then the subnetwork needs Private Google Access.
+stay private; then name the network and the subnetwork, which needs
+Private Google Access.
 
 ### spec.networkSpec.network
 
 `string | valueFrom`
 
 The VPC network: a GcpVpcNetwork reference or a literal
-projects/{project}/global/networks/{name}. Unset: the project's
-default network.
+projects/{project}/global/networks/{name}. Unset: the project's network
+named "default", which many organizations never create -- in a project
+without one, Google refuses the template, so name a network.
 
 - references: GcpVpcNetwork (`status.outputs.network_id`)
 - rule: write as {value: <literal>} or {valueFrom: {kind: GcpVpcNetwork, name: <that resource's name>, fieldPath: status.outputs.network_id}} -- a bare string does not parse
@@ -241,7 +255,10 @@ a literal projects/{project}/regions/{region}/subnetworks/{name}.
 Shut an idle runtime down after this long -- the main cost control for
 interactive notebooks. A duration in seconds ending in "s": "0s"
 disables idle shutdown; otherwise between 600s (10 minutes) and 86400s
-(24 hours). Unset keeps Google's default idle shutdown.
+(24 hours). Unset keeps Google's default idle shutdown. Fixed at
+creation: Google's provider never sends a changed value, so a change
+shows on every plan and Google keeps the first one -- create a new
+template for a different timeout.
 
 - rule: idle_timeout must be a duration in seconds such as 3600s
 
@@ -251,14 +268,17 @@ disables idle shutdown; otherwise between 600s (10 minutes) and 86400s
 
 Block the user's own Google credentials inside the runtime, so
 notebooks act only as the runtime's service identity. Sent only when
-set.
+true. Fixed at creation: turning it off later sends nothing, and
+Google keeps it on -- create a new template instead.
 
 ### spec.enableSecureBoot
 
 `bool`
 
 Boot runtimes with Secure Boot (Shielded VM), refusing unsigned boot
-components. Sent only when true.
+components. Sent only when true. Fixed at creation: turning it off
+later sends nothing, and Google keeps it on -- create a new template
+instead.
 
 ### spec.networkTags
 

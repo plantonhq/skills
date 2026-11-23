@@ -41,14 +41,14 @@ spec:
     agentFramework: google-adk
     # Build from source: a base64 .tar.gz of the agent's root (agent.py and
     # requirements.txt -- the readable copy is e2e/fixtures/agent-source/),
-    # imported as root_agent from the agent module.
+    # served as app (the agent wrapped in an AdkApp) from the agent module.
     sourceCodeSpec:
       inlineSource:
-        sourceArchive: H4sIAGxTsmoAA+1U24rbMBDdZ3/F4JfuQuw414eFFNJtH0q3UMpSKKUErT22p5UlryTnsvTjO5ITCnlIobC9kYODHM9FR2c0IypULm13F0+ILMvm0yn4lXG8ZqPJNIPRbDybTmej2WQO2Wg8n8wuIHtKUgd01gnDVIzW7pTfpkaUJ+zHh/tHEMfxXY1gGyElWgdLfx/gJa5R6rbx72/IgQhfe9srVZFC2JCUcN+RLECoAkyn0ii6q8kCP86n1J3JEe6xJrb7L6SkjxQmr2nt/wKOcdgIRSVvne5EI0Mu9o1sjkoY0vYaBFhSlUS4vX27Z7IhV4PS4LSWdsBbhfwt17AE3KLJyWJgEQWGSWl0k+wJtYJjL2+k7gp4EfgzkX34F8zdAD6gcbiF5etnFt7tXK1Vn+bqwM6f1lGDgYfuHBTYoiqYJWjFTjsm4dAoIcGiWVOOrM177NXy8QcJRMlugAU5jr2OgMG3EfLHEhJIbiAXTkhdDau89b91ICYoiIChDkMvYUlb1xm0w2A4HDSFb3AvLM6nEVc5irwIUGnNUqai+JoGZy5X02qzL24U+TZY9SIv+m+XgZYSDS7iVgrltFrxpr1TPAjWRhcoF3GFDSlKxuksKaWw9d5aoM0NtY60WsRLZTdo7I+qPnRcfAq6FWCdbm26jyNlnenyPu6j7lg2lgxYMsurtcSty8ML+pS+jJqvlw3asOSc5Sr60/31t8PgQ0cGfafb1G1PjsBfxU/mv7cezX9+m5zn/+9APw+S3I/DRBA3uCu1aT6F7l71M8YOeFx8fr4YpaMsS7NzT51xxhln/Af4DhtSz9UADgAA
+        sourceArchive: H4sIAMZCAWsAA+1VbW/bNhDuZ/2Kg/chCRApsmO7QAsPcJsMCJqhxVoMKNYioKSzxIUiVZKK42I/fg8ppUOCof2UDd18MECZ9/bw7jlS1Kx91u2ePKLkeb6czymskIdrPptNlzRdnOJrPj3Nl5RPZ8tZ/oTyxwR1J73zwgKKNcZ/zW7bMKuv6B8e7juRyWTyrmFyrVCKnad14AOd8Q0r07Xh+5X0JOLuoDvXtdRMW6kUFb1UFQldke11liTvGukIPx9Cmt6WTAU3EvqwI7UKnsKWjbwJf4lnfNIKLTdIne1Eq2Is2CauZC2sNO4ZCXJS14rp8vLnEclW+oa0IW+Mcsfk2N4wcDi407q6XncdNk1M2qGxG+JbtqV0HKElEXa6saZNR5SdQMDDl8r0Fb2IhwK60f13Lv0x/crW8y2tLw4cvdn5xughzNEd5FACL1uO4EzvqeKOdQXoZDSMdgDh2WqhIl5ZMgr2Cw8lDP53dREbmBFX0gffwwATelS1khZQjN09j/YbJWpH18xdPBRoXKCJtLHMhCObrUYYLVp2EWIrytdvSXhvZdF7bKJAaC3iFjvPKcagUHz0LCHIy9dv3v90cXl+dXbxdv3i8nw1JYSnNNUmvQ0hHL57WVGOtR7W8vOGTnzbncQWZbDP6s9Dv3C/kOVPPfAHSrnM3/qYpxCOl3NK5d94/kEeGSs6+KAPEtA0SWIlamPAhUxU11k0B9/aztiRnYPNTeyVkHeqaHjFkbguScKoXw1EWg1uhxFNqNVq0imhvdFX4OZgNDmO2tZUrFaTmlupZXqaLVI0wDWjtmJXWtl5afRqstZuy6jRF+Z+6kFwGWlQkfOmc9noJ7Xzti8Hv/emBwvAAAIDHFbnJPqCmtAQMrDSYIQcYLEGgxDlKEl+uD+acRyGIcSu3XVGQmmKQGTsWtPXDVrvAiy7o5bB18o9R9oC2UO0s1fjoDWYKY2MX8ZpHLUx2Djq41Ba0XUPxjBLsIcq3+tANugO4+bqr24cJf/2bfj/k4dj+Rg5vvH+By3e/9ni6XKxmM2e4v2fz5fT/fv/T8hwnaZlePlSIXH5+Y2x7W/3BvYYt+3HH1fTbJrnWb6f0r3sZS97+Q/In/TKvGEAEAAA
       pythonSpec:
         version: "3.12"
         entrypointModule: agent
-        entrypointObject: root_agent
+        entrypointObject: app
     deploymentSpec:
       minInstances: 1
       maxInstances: 5
@@ -252,7 +252,8 @@ Labels on the agent.
 Customer-managed encryption key protecting the agent's data: a
 GcpKmsKey reference or a literal
 projects/{project}/locations/{location}/keyRings/{ring}/cryptoKeys/{key}.
-Omit to use Google-managed encryption. Immutable.
+The key must be in the agent's location. Omit to use Google-managed
+encryption. Immutable: a different key replaces the agent.
 
 - references: GcpKmsKey (`status.outputs.key_id`)
 - rule: write as {value: <literal>} or {valueFrom: {kind: GcpKmsKey, name: <that resource's name>, fieldPath: status.outputs.key_id}} -- a bare string does not parse
@@ -266,6 +267,7 @@ calls this block `spec`; the catalog names it for what it holds, so a
 manifest never reads `spec.spec`.
 
 - rule: container_spec and source_code_spec cannot both be set
+- rule: package_spec cannot be combined with container_spec or source_code_spec: the agent's code comes from exactly one of them
 - rule: service_account must not be set when identity_type is AGENT_IDENTITY
 - rule: secret_env entries cannot carry a value when identity_type is AGENT_IDENTITY: the agent's identity exists only after Google creates the agent, and the agent reads its secrets during that create, so the stored secret could never be granted in time -- use secret_ref to a secret readable by the agents' identities, or run as a service account
 
@@ -321,7 +323,10 @@ source_code_spec.
 
 Container image URI in Artifact Registry, e.g.
 us-central1-docker.pkg.dev/{project}/{repo}/agent:latest. The image
-must implement the Agent Engine serving contract.
+must implement the Agent Engine serving contract, and the project's
+Reasoning Engine service agent
+(service-<project number>@gcp-sa-aiplatform-re.iam.gserviceaccount.com)
+needs roles/artifactregistry.reader on the repository to pull it.
 
 - rule: {"required":true,"string":{"minLen":"1"}}
 
@@ -463,8 +468,13 @@ root (which is on sys.path), e.g. "path.to.agent". Google's default
 
 `string`
 
-The callable in entrypoint_module that IS the agent. Google's default
-"root_agent" (the ADK convention).
+The object in entrypoint_module that Agent Engine serves. It must
+define at least one of query, async_query, stream_query,
+async_stream_query or bidi_stream_query, or the container never starts
+("missing all methods") -- so an ADK agent is wrapped, e.g.
+app = vertexai.agent_engines.AdkApp(agent=root_agent), and this names
+"app". Google's default "root_agent" names a bare ADK agent, which has
+none of those methods.
 
 ### spec.agent.sourceCodeSpec.pythonSpec.requirementsFile
 
@@ -489,7 +499,8 @@ Build arguments passed as --build-arg flags.
 
 `GcpVertexAiAgentEnginePackageSpec`
 
-The legacy pickled-object package.
+The legacy pickled-object package. Mutually exclusive with
+container_spec and source_code_spec.
 
 ### spec.agent.packageSpec.pickleObjectGcsUri
 
@@ -567,8 +578,11 @@ secret you already own.
 
 `string` · required
 
-Variable name.
+Variable name. GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY is Agent
+Engine's own: Google's provider drops it when reading the agent back,
+so declaring it would show a change on every deploy.
 
+- rule: GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY is managed by Agent Engine itself: declared here, it shows as a change on every deploy
 - rule: {"required":true,"string":{"pattern":"^[A-Za-z_][A-Za-z0-9_.-]*$"}}
 
 ### spec.agent.deploymentSpec.env[].value
@@ -638,7 +652,8 @@ when unset) secretAccessor on that secret alone, and points the
 variable at that exact version -- the agent carries a reference,
 never the value. A changed value adds a version and redeploys the
 agent, so rotation is a deploy; destroying the agent removes the
-secret. The secret's id is
+secret, under every deletion_policy (ABANDON included -- see
+deletion_policy). The secret's id is
 agentengine_<location>_<metadata.name>_<variable> ('.' in the name
 becomes '-'). Not available with identity_type AGENT_IDENTITY (see
 the rule on GcpVertexAiAgentEngineAgent).
@@ -649,11 +664,13 @@ the rule on GcpVertexAiAgentEngineAgent).
 
 `int32` · optional (explicit presence)
 
-Instances kept running at all times (0-10; Google's default 1). Zero
-scales the agent to nothing between requests at the cost of cold
-starts. Sent only when set.
+Instances kept running at all times, 1-75 (Google's default 1). Google
+accepts 0, but Google's provider leaves an explicit 0 out of every
+request on both engines, so the agent keeps Google's default of one
+instance running (and billing) around the clock and every deploy shows
+the change again; 0 is refused for that reason. Sent only when set.
 
-- rule: {"int32":{"lte":10,"gte":0}}
+- rule: min_instances must be 1 to 75: Google's provider never sends 0, so an agent set to 0 keeps Google's default of 1 instance running and shows the change on every deploy
 
 ### spec.agent.deploymentSpec.maxInstances
 
@@ -1305,11 +1322,22 @@ Write memories in the third person ("The user prefers...").
 `string`
 
 What happens to the agent when this resource is destroyed:
-  "" / "DELETE" -- the agent and its memories are deleted
+  "" / "DELETE" -- the agent is deleted without force: Google refuses
+                   while the agent still holds child resources such as
+                   sessions or memories, and the destroy fails
+  "FORCE"       -- the agent is deleted with force, together with its
+                   sessions and memories
   "PREVENT"     -- destroy fails
   "ABANDON"     -- the agent leaves management and keeps running
+ABANDON covers the agent only. The Secret Manager secrets this
+component keeps for deployment_spec.secret_env[].value, their
+versions, and the agent identity's access grant on them are still
+deleted on both engines, so the abandoned agent can no longer read
+those secrets: its next instance start fails. An agent meant to
+outlive this resource should take every secret through secret_ref,
+from a Secret Manager secret you own.
 
-- rule: deletion_policy must be one of: DELETE, PREVENT, ABANDON
+- rule: deletion_policy must be one of: DELETE, FORCE, PREVENT, ABANDON
 
 ## Outputs
 
@@ -1322,6 +1350,7 @@ Reference an output from another manifest as `valueFrom: {kind: GcpVertexAiAgent
 | `status.outputs.location` | `string` | The location the agent runs in, for rebuilding resource paths and the regional API host. |
 | `status.outputs.create_time` | `string` | RFC 3339 timestamp of the agent's creation. |
 | `status.outputs.update_time` | `string` | RFC 3339 timestamp of the agent's last update. |
+| `status.outputs.effective_identity` | `string` | The identity the agent runs as, as Google resolved it: the service account email, the Reasoning Engine service agent, or the Agent Identity Google minted for it under AGENT_IDENTITY -- the principal to grant access to the secrets and resources the agent reads. |
 
 ## References
 

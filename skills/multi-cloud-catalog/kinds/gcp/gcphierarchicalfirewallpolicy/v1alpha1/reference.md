@@ -88,14 +88,6 @@ spec:
         layer4Configs:
           - ipProtocol: tcp
             ports: ["22"]
-    - priority: 2000
-      action: goto_next
-      direction: INGRESS
-      description: Everything else is decided lower down
-      match:
-        layer4Configs:
-          - ipProtocol: all
-
   # Where the policy is enforced: the organization itself. A node carries
   # one hierarchical policy association at a time.
   associations:
@@ -225,6 +217,8 @@ is created) while every other rule is left alone; change a rule's
 content in place and it is updated in place. An empty list is a valid
 policy that decides nothing (Google's implied goto_next rules apply).
 
+- rule: an INGRESS rule must name where its traffic comes from: set src_ip_ranges, src_fqdns, src_region_codes, src_threat_intelligences, src_address_groups, src_secure_tags, src_networks or src_network_context (Google's implied goto_next rules already pass everything the rules do not decide)
+- rule: an EGRESS rule must name where its traffic goes: set dest_ip_ranges, dest_fqdns, dest_region_codes, dest_threat_intelligences, dest_address_groups or dest_network_context (Google's implied goto_next rules already pass everything the rules do not decide)
 - rule: security_profile_group is required when action is apply_security_profile_group and must be empty for every other action
 - rule: tls_inspect can be true only when action is apply_security_profile_group
 - rule: enable_logging cannot be set on a goto_next rule -- Google logs only the rule that decides
@@ -322,16 +316,20 @@ Protocols and ports the rule applies to. At least one entry; a packet
 matches when it fits any entry.
 
 - rule: {"repeated":{"minItems":"1"}}
-- rule: ports can be set only when ip_protocol is tcp, udp, 6, or 17 -- other protocols have no ports
+- rule: ports can be set only when ip_protocol is tcp or udp -- other protocols have no ports
 
 ### spec.rules[].match.layer4Configs[].ipProtocol
 
 `string` · required
 
 The IP protocol: a well-known name (tcp, udp, icmp, esp, ah, ipip,
-sctp), `all` for every protocol, or a protocol number (0-255).
+sctp), `all` for every protocol, or the number (0-255) of a protocol
+with no name here. Write a named protocol by its name: Google stores the
+name for its number (`6` reads back as `tcp`, measured on both engines),
+so a rule written with the number re-plans forever.
 
 - rule: ip_protocol must be tcp, udp, icmp, esp, ah, ipip, sctp, all, or an IP protocol number 0-255
+- rule: write this protocol by its name (icmp, ipip, tcp, udp, esp, ah or sctp), not its number -- Google stores the name, so the number re-plans forever
 - rule: {"required":true}
 
 ### spec.rules[].match.layer4Configs[].ports

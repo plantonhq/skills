@@ -16,13 +16,26 @@ takes a rule with `enforce`; a list constraint (`gcp.resourceLocations`,
 shape and Google rejects a mismatch at apply time.
 `gcloud org-policies list-constraints --project <id>` shows the type.
 
+Google normalizes list values as it stores them: for `gcp.resourceLocations`
+a bare location such as `us-west4` reads back as its value group
+`in:us-west4-locations`. Write the value group yourself, or every plan shows
+the policy changing.
+
 ## Dry run first
 
 `dryRunPolicy` evaluates the same rules in audit mode: violations are
 logged (`dryRunPolicyViolation` in the audit log), nothing is blocked.
 Roll out a new guardrail as a dry-run policy alone, read what it would
 have broken, then add the same rules to `policy`. Keep both while a
-tightening is in flight so the console shows the difference.
+tightening is in flight so the console shows the difference. Google takes
+a dry run only on a custom constraint, a managed constraint
+(`compute.managed.disableSerialPortAccess`,
+`iam.managed.disableServiceAccountKeyCreation`), or the four legacy
+constraints `gcp.restrictServiceUsage`, `gcp.restrictEndpointUsage`,
+`gcp.restrictTLSVersion` and `gcp.restrictTLSCipherSuites`: on any other,
+such as `gcp.resourceLocations`, the create is refused, and the spec refuses
+it first. Prefer the managed form of a guardrail when you plan to dry-run
+it; a dry run also needs billing on the project.
 
 ## Scope high, relax low
 
